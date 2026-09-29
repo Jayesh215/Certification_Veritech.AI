@@ -1,0 +1,249 @@
+{
+  "project_name": "Veritech.AI Certificate Registration Portal",
+  "app_archetype": "Hybrid Fullstack - Stripe & Razorpay Grade SaaS Product Portal with Modern Minimalist Admin Console",
+  "design_philosophy": {
+    "vision": "Stripe-level clarity meets Razorpay's effortless checkout confidence. Zero purple AI gimmicks, zero muddy glassmorphism, zero generic centered cards. Clean architectural white surfaces, deep Veritech navy structural anchors, precise high-contrast electric brand blue highlights, and ultra-crisp tabular micro-layouts.",
+    "brand_alignment": "Preserves exact Veritech.AI brand geometry (Dark Navy #0F172A text, Electric Cyan-Blue #2563EB accent square icon and .AI affix). The UI elevates interns' transition into certified AI & Software professionals."
+  },
+  "logo_integration": {
+    "asset_path": "/veritech-logo.png",
+    "fallback_component": "VeritechLogoSVG",
+    "desktop_height": "36px",
+    "mobile_height": "28px",
+    "aspect_ratio_preservation": "strict - object-contain, never stretched or recolored",
+    "header_placement": "Left-aligned with subtle vertical divider separating product identifier: 'Certificate Portal'",
+    "usage_rule": "Strictly render with clean light background (#FFFFFF or #F8FAFC). Never invert, skew, or place over noisy gradients."
+  },
+  "theme_strategy": {
+    "default_mode": "light",
+    "surface_tone": "Warm crisp slate-neutral (#F8FAFC canvas with pure #FFFFFF elevation cards)",
+    "contrast_standard": "WCAG AAA & APCA compliant high-contrast dark navy typography against pale surfaces"
+  },
+  "color_palette": {
+    "primary_navy": "#0F172A",
+    "navy_hover": "#1E293B",
+    "navy_muted": "#334155",
+    "brand_blue": "#2563EB",
+    "bright_blue": "#3B82F6",
+    "brand_blue_hover": "#1D4ED8",
+    "brand_blue_light": "#EFF6FF",
+    "brand_blue_subtle": "#DBEAFE",
+    "brand_blue_focus_ring": "rgba(37, 99, 235, 0.25)",
+    "background_canvas": "#F8FAFC",
+    "surface_card": "#FFFFFF",
+    "surface_subtle": "#F1F5F9",
+    "border_subtle": "#E2E8F0",
+    "border_strong": "#CBD5E1",
+    "text_primary": "#0F172A",
+    "text_secondary": "#475569",
+    "text_muted": "#64748B",
+    "text_inverted": "#FFFFFF",
+    "success_green": "#16A34A",
+    "success_light": "#DCFCE7",
+    "success_border": "#86EFAC",
+    "error_red": "#DC2626",
+    "error_light": "#FEE2E2",
+    "error_border": "#FCA5A5",
+    "warning_amber": "#D97706",
+    "warning_light": "#FEF3C7",
+    "warning_border": "#FDE68A",
+    "popular_badge_bg": "#1E293B",
+    "popular_badge_text": "#93C5FD"
+  },
+  "typography": {
+    "font_family_recommendation": {
+      "primary_sans": "'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+      "mono_numbers": "'JetBrains Mono', 'IBM Plex Mono', Menlo, monospace"
+    },
+    "hierarchy": {
+      "hero_h1": "text-4xl sm:text-5xl font-extrabold tracking-tight text-slate-900 leading-[1.15]",
+      "section_h2": "text-2xl sm:text-3xl font-bold tracking-tight text-slate-900",
+      "card_h3": "text-lg sm:text-xl font-semibold tracking-tight text-slate-900",
+      "label_overline": "text-xs font-semibold uppercase tracking-wider text-slate-500",
+      "body_lead": "text-base sm:text-lg text-slate-600 leading-relaxed",
+      "body_regular": "text-sm sm:text-base text-slate-600 leading-normal",
+      "body_small": "text-xs sm:text-sm text-slate-500 leading-normal",
+      "tabular_currency": "font-mono font-bold tracking-tight text-slate-900"
+    }
+  },
+  "spacing_and_radii": {
+    "spacing_scale": "8px baseline grid (p-2: 8px, p-4: 16px, p-6: 24px, p-8: 32px, p-12: 48px, p-16: 64px)",
+    "border_radius": {
+      "cards": "rounded-2xl (16px)",
+      "buttons": "rounded-xl (12px)",
+      "inputs": "rounded-xl (12px)",
+      "badges": "rounded-full (9999px)",
+      "pricing_cards": "rounded-2xl (16px) with 1.5px high-definition border"
+    },
+    "shadows": {
+      "card_subtle": "0 1px 3px 0 rgba(15, 23, 42, 0.05), 0 1px 2px -1px rgba(15, 23, 42, 0.05)",
+      "card_hover": "0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 8px 10px -6px rgba(15, 23, 42, 0.04)",
+      "pricing_active": "0 12px 30px -4px rgba(37, 99, 235, 0.15)",
+      "button_glow": "0 2px 10px 0 rgba(37, 99, 235, 0.25)",
+      "receipt_shadow": "0 20px 40px -15px rgba(15, 23, 42, 0.12)"
+    }
+  },
+  "media_assets": {
+    "selected_images": [
+      {
+        "category": "hero_intern_recognition",
+        "url": "https://images.unsplash.com/photo-1541339907198-e08756dedf3f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2OTV8MHwxfHNlYXJjaHwzfHxpbnRlcm4lMjBncmFkdWF0aW9uJTIwcHJvZmVzc2lvbmFsfGVufDB8fHx8MTc5MDcwMjM0NHww&ixlib=rb-4.1.0&q=85",
+        "description": "Graduating tech interns celebrating achievements",
+        "usage_placement": "Landing page credentials banner or testimonial backing with subtle overlay"
+      },
+      {
+        "category": "internship_engineering_hero",
+        "url": "https://images.unsplash.com/photo-1580894908361-967195033215?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzd8MHwxfHNlYXJjaHwxfHxtb2Rlcm4lMjBzb2Z0d2FyZSUyMGVuZ2luZWVyfGVufDB8fHx8MTc5MDcwMjM0NHww&ixlib=rb-4.1.0&q=85",
+        "description": "Female software engineer coding in AI development environment",
+        "usage_placement": "Hero split-screen showcase / internship program credibility badge"
+      },
+      {
+        "category": "intern_certificate_achievement",
+        "url": "https://images.pexels.com/photos/17258017/pexels-photo-17258017.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Confident intern graduate holding certified document",
+        "usage_placement": "Review page reassurance sidebar or Certificate verification preview"
+      }
+    ]
+  },
+  "component_design_tokens": {
+    "header_nav": {
+      "height": "h-18 (72px)",
+      "surface": "bg-white/95 backdrop-blur-md border-b border-slate-200/80 sticky top-0 z-50",
+      "logo_container": "flex items-center gap-3",
+      "nav_links": "text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors",
+      "primary_cta": "bg-slate-900 hover:bg-slate-800 text-white font-medium px-4 py-2 rounded-xl text-sm transition-all"
+    },
+    "stepper_progress_bar": {
+      "container": "w-full max-w-4xl mx-auto py-6 px-4 mb-8",
+      "step_circle_active": "w-9 h-9 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center ring-4 ring-blue-100 shadow-sm",
+      "step_circle_completed": "w-9 h-9 rounded-full bg-slate-900 text-white flex items-center justify-center shadow-sm",
+      "step_circle_pending": "w-9 h-9 rounded-full bg-slate-100 text-slate-400 font-semibold flex items-center justify-center border border-slate-200",
+      "connector_line_completed": "h-0.5 bg-slate-900 flex-1 transition-all",
+      "connector_line_pending": "h-0.5 bg-slate-200 flex-1"
+    },
+    "pricing_duration_cards": {
+      "grid_layout": "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5",
+      "card_default": "relative bg-white border border-slate-200 rounded-2xl p-6 hover:border-blue-400 hover:shadow-lg transition-all duration-200 cursor-pointer flex flex-col justify-between",
+      "card_selected": "relative bg-blue-50/40 border-2 border-blue-600 rounded-2xl p-6 shadow-md ring-2 ring-blue-600/10 flex flex-col justify-between",
+      "popular_highlight": "border-2 border-blue-600 shadow-lg relative bg-white",
+      "popular_badge": "absolute -top-3.5 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-[11px] font-bold uppercase tracking-wider py-1 px-3.5 rounded-full shadow-sm",
+      "pricing_tiers": [
+        {"duration": "1 Month", "months": 1, "price": 99, "features": ["Official Veritech.AI Certificate", "Instant QR Verification", "PDF Download"]},
+        {"duration": "2 Months", "months": 2, "price": 149, "features": ["All 1 Month perks", "Performance Grade Mention", "LinkedIn Credential Link"]},
+        {"duration": "3 Months", "months": 3, "price": 199, "popular": true, "badge": "Most Popular", "features": ["All 2 Months perks", "Letter of Recommendation (LOR)", "Priority Verification Desk", "Alumni Directory Listing"]},
+        {"duration": "6 Months", "months": 6, "price": 499, "features": ["Comprehensive 6M Specialization", "LOR + Project Reference Check", "Fast-track Verification (24h)", "Physical Certificate Option"]}
+      ]
+    },
+    "payment_modal_and_razorpay": {
+      "simulation_drawer": "Razorpay-grade trusted modal overlay with locked security badges, auto-calculated GST breakdown (inclusive or itemized), UPI options (GPay, PhonePe, Paytm), NetBanking, and Credit/Debit cards.",
+      "security_badges": ["256-Bit SSL Secured", "PCI-DSS Level 1 Compliant", "Razorpay Payment Gateway Verified"]
+    },
+    "receipt_style_card": {
+      "container": "max-w-xl mx-auto bg-white border border-slate-200 rounded-3xl p-8 sm:p-10 shadow-xl relative overflow-hidden",
+      "top_accent_strip": "h-2 w-full bg-emerald-500 absolute top-0 left-0",
+      "notch_cutouts": "Subtle dashed perforation divider line separating ticket header and transaction breakdown",
+      "qr_code_area": "Clean border-2 border-dashed border-slate-200 p-3 rounded-2xl bg-slate-50 flex items-center justify-center"
+    },
+    "admin_dashboard_layout": {
+      "sidebar": "w-64 bg-slate-900 text-slate-300 min-h-screen p-4 flex flex-col justify-between border-r border-slate-800",
+      "kpi_grid": "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-8",
+      "kpi_card": "bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs hover:border-slate-300 transition-colors",
+      "table_container": "bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden"
+    }
+  },
+  "screen_by_screen_specifications": {
+    "page_1_landing_hero": {
+      "title": "Veritech.AI Certificate Registration Portal",
+      "layout": "Sticky glass navbar + Asymmetric hero with verified statistics, clear value props (Fast Verification, Tamper-proof QR, Globally Recognized), instant 'Register Now' & 'Track Application' action buttons.",
+      "action_element": "data-testid='hero-start-registration-btn'"
+    },
+    "page_2_intern_registration_form": {
+      "title": "Step 1: Intern & Internship Details",
+      "form_sections": [
+        "Personal Information (Full Name, Personal Email, Phone Number, College / University, Degree, Branch/Specialization, Graduation Year)",
+        "Internship Information (Internship ID / Roll No, Domain / Role [AI/ML, Data Science, Fullstack Web Dev, Cloud Architecture, etc.], Start Date, End Date, Mentor Name)",
+        "Certificate Preference (Name on Certificate, Delivery Address if applicable)",
+        "Intern Declaration Checkbox with legal verification consent"
+      ],
+      "actions": ["Continue to Review (data-testid='registration-continue-btn')", "Save Draft"]
+    },
+    "page_3_review_details": {
+      "title": "Step 2: Review Registration Data",
+      "layout": "Two-column inspection: Left column grouped cards with quick inline edit modals; Right column summary card with intern ID preview and declaration status.",
+      "actions": ["Edit Details (data-testid='review-edit-btn')", "Confirm & Proceed to Payment (data-testid='review-proceed-btn')"]
+    },
+    "page_4_select_certificate_duration": {
+      "title": "Step 3: Select Certificate Duration & Plan",
+      "layout": "4-card pricing tier (1M ₹99, 2M ₹149, 3M ₹199 Popular, 6M ₹499) + Live Dynamic Order Summary Card + Promo code input + Razorpay Checkout Trigger."
+    },
+    "page_5_payment_processing_razorpay": {
+      "title": "Razorpay Payment Gateway Trigger",
+      "flow": "Mock/Sandbox Razorpay modal supporting instant success test button, UPI ID test, and simulated failure test for robust QA testing."
+    },
+    "page_6_payment_success": {
+      "title": "Step 4: Payment Confirmed & Registration Successful",
+      "layout": "Clean receipt card with transaction reference (TXN-VERI-XXXX), Intern ID, Certificate Duration, Download PDF Receipt button, and View Status button."
+    },
+    "page_7_payment_failed": {
+      "title": "Payment Unsuccessful",
+      "layout": "Informative recovery card with error diagnostic message, 'Retry Payment' primary button, and 'Contact Support' fallback."
+    },
+    "page_8_status_lookup": {
+      "title": "Track Registration & Certificate Verification",
+      "layout": "Instant lookup by Intern ID or Email with interactive timeline tracker (Registered -> Payment Verified -> Under Admin Review -> Certificate Issued)."
+    },
+    "page_9_admin_login": {
+      "title": "Veritech Admin Secure Console",
+      "layout": "Centered clean auth card with demo credentials auto-fill button (admin@veritech.ai / admin123)."
+    },
+    "page_10_admin_dashboard_kpis": {
+      "title": "Admin Overview & Performance Metrics",
+      "kpis": ["Total Registrations", "Paid Registrations", "Pending Payments", "Failed Transactions", "Total Revenue (₹)", "Certificates Generated"],
+      "charts": "Revenue over time line chart + Registration domain distribution donut chart."
+    },
+    "page_11_admin_registrations_table": {
+      "title": "Intern Registrations Manager",
+      "features": ["Search by name/email/ID", "Filter by domain & payment status", "View details drawer", "Export CSV", "Approve/Reject actions"]
+    },
+    "page_12_admin_payments_table": {
+      "title": "Transaction Ledger",
+      "features": ["Razorpay Payment ID", "Amount", "Method (UPI/Card)", "Status Badge", "Date/Time", "Refund Trigger / Receipt Resend"]
+    },
+    "page_13_admin_certificate_management": {
+      "title": "Certificate Generation & Dispatch",
+      "features": ["Interactive Certificate Canvas Preview", "Tamper-proof QR Code Generator", "Single & Bulk PDF Generation", "Email Certificate Action"]
+    }
+  },
+  "universal_testing_attributes": {
+    "rule": "Every button, input, tab, filter, and critical status badge MUST include data-testid in kebab-case.",
+    "sample_testids": [
+      "nav-landing-link",
+      "nav-register-link",
+      "nav-status-link",
+      "nav-admin-link",
+      "intern-name-input",
+      "intern-email-input",
+      "intern-phone-input",
+      "intern-college-input",
+      "intern-domain-select",
+      "intern-declaration-checkbox",
+      "duration-card-1m",
+      "duration-card-2m",
+      "duration-card-3m",
+      "duration-card-6m",
+      "order-summary-total",
+      "razorpay-pay-button",
+      "receipt-download-pdf-btn",
+      "admin-kpi-total-revenue",
+      "admin-registrations-search",
+      "admin-generate-certificate-btn"
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Strictly follow the uploaded logo at /veritech-logo.png or create an identical high-res SVG component if image loading fails.",
+    "Do NOT use generic purple gradients or AI chat visuals. Use Stripe/Razorpay high-trust fintech and enterprise SaaS styling.",
+    "Keep Light theme as default with pure white cards, #F8FAFC canvas, and #0F172A primary navy text.",
+    "All form steps must preserve state into localStorage/backend so interns never lose entered information.",
+    "Implement simulated Razorpay modal with seamless test payment modes (Success / Failure) to ensure 100% demo fidelity without requiring real bank credentials."
+  ]
+}
