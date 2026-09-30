@@ -714,6 +714,24 @@ async def download_certificate(registration_id: str):
     )
 
 
+@api.get("/admin/certificates/{registration_id}/preview")
+async def preview_certificate(registration_id: str, email: str = Depends(require_admin)):
+    """Inline PDF preview for admins. Does not persist certificate number if pending."""
+    reg = await db.registrations.find_one({"registration_id": registration_id})
+    if not reg:
+        raise HTTPException(404, "Registration not found")
+    reg = clean(reg)
+    if not reg.get("certificate_number"):
+        # Use a preview placeholder — does NOT persist
+        reg["certificate_number"] = f"VT-CERT-{datetime.now(timezone.utc).year}-{registration_id.split('-')[-1]} (PREVIEW)"
+    pdf_bytes = _build_certificate_pdf(reg)
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{registration_id}-preview.pdf"'},
+    )
+
+
 @api.get("/receipts/{registration_id}/download")
 async def download_receipt(registration_id: str):
     reg = await db.registrations.find_one({"registration_id": registration_id})
