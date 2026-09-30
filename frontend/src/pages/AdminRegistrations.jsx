@@ -1,6 +1,16 @@
 import { useEffect, useState } from "react";
-import { Search, Download } from "lucide-react";
+import { Search, Download, FileDown } from "lucide-react";
 import { api, API_BASE, formatCurrency } from "../lib/api";
+
+async function downloadCsv(path, filename) {
+  const token = localStorage.getItem("veritech_admin_token");
+  const res = await fetch(`${API_BASE}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
 
 const StatusBadge = ({ s }) => {
   const map = {
@@ -29,9 +39,18 @@ export default function AdminRegistrations() {
 
   return (
     <div>
-      <div className="mb-4">
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">Registrations</h1>
-        <p className="mt-1 text-sm text-slate-500">All intern registrations and their statuses.</p>
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">Registrations</h1>
+          <p className="mt-1 text-sm text-slate-500">All intern registrations and their statuses.</p>
+        </div>
+        <button
+          onClick={() => downloadCsv("/admin/registrations/export", "veritech-registrations.csv")}
+          className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3.5 py-2 text-sm font-semibold text-white hover:bg-slate-800 whitespace-nowrap"
+          data-testid="export-registrations-csv"
+        >
+          <FileDown className="h-4 w-4" /> Export CSV
+        </button>
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 mb-4 flex flex-col sm:flex-row gap-3">

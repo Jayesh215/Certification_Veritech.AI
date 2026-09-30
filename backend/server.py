@@ -9,19 +9,24 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional
 
+import csv
 import bcrypt
 import jwt as pyjwt
+import qrcode
 import razorpay
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, APIRouter, HTTPException, Header, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, EmailStr, Field
 from reportlab.lib.colors import HexColor
 from reportlab.lib.pagesizes import landscape, A4
 from reportlab.lib.units import inch
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas as pdf_canvas
 from starlette.middleware.cors import CORSMiddleware
+
+from email_service import send_payment_success_email
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -33,6 +38,7 @@ RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "rzp_test_REPLACE_ME")
 RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "REPLACE_ME_SECRET")
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "jayeshgangurde15@gmail.com")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "Jayesh@123")
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://veritech-intern.preview.emergentagent.com")
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
@@ -480,6 +486,13 @@ async def _mark_paid(reg_id: str, order_id: str, payment_id: str, signature: str
             "updated_at": paid_at,
         }},
     )
+    # Fire confirmation email (non-blocking)
+    reg = await db.registrations.find_one({"registration_id": reg_id})
+    if reg:
+        try:
+            await send_payment_success_email(clean(reg))
+        except Exception as e:
+            logger.error("email dispatch failed: %s", e)
 
 
 @api.get("/payments/{registration_id}")
@@ -488,6 +501,30 @@ async def get_payment(registration_id: str):
     if not p:
         raise HTTPException(404, "No payment found")
     return clean(p)
+
+
+# ============================================================
+# Public certificate verification (QR target)
+# ============================================================
+@api.get("/verify/{cert_number}")
+async def verify_certificate(cert_number: str):
+    reg = await db.registrations.find_one({"certificate_number": cert_number})
+    if not reg:
+        raise HTTPException(404, "Certificate not found")
+    reg = clean(reg)
+    return {
+        "verified": True,
+        "certificate_number": reg["certificate_number"],
+        "full_name": reg["full_name"],
+        "internship_type": reg["internship_type"],
+        "certificate_type": reg["certificate_type"],
+        "duration_months": reg["duration_months"],
+        "internship_start_date": reg["internship_start_date"],
+        "internship_end_date": reg["internship_end_date"],
+        "certificate_status": reg["certificate_status"],
+        "issued_on": reg.get("certificate_generated_at"),
+        "registration_id": reg["registration_id"],
+    }
 
 
 # ============================================================
@@ -568,6 +605,63 @@ async def admin_payments(email: str = Depends(require_admin)):
             d["duration_months"] = reg.get("duration_months")
         result.append(d)
     return result
+
+
+@api.get("/admin/registrations/export")
+async def admin_registrations_export(email: str = Depends(require_admin)):
+    docs = await db.registrations.find({}).sort("created_at", -1).to_list(10000)
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow([
+        "Registration ID", "Full Name", "Email", "Mobile", "College", "Course",
+        "Branch", "Graduation Year", "Internship Type", "Start Date", "End Date",
+        "Certificate Type", "Duration (Months)", "Amount", "Currency",
+        "Payment Status", "Payment ID", "Certificate Status", "Certificate Number",
+        "Registered At", "Paid At",
+    ])
+    for d in docs:
+        w.writerow([
+            d.get("registration_id",""), d.get("full_name",""), d.get("email",""),
+            d.get("mobile",""), d.get("college",""), d.get("course",""),
+            d.get("branch",""), d.get("graduation_year",""),
+            d.get("internship_type",""), d.get("internship_start_date",""),
+            d.get("internship_end_date",""), d.get("certificate_type",""),
+            d.get("duration_months",""), d.get("amount",""), d.get("currency","INR"),
+            d.get("payment_status",""), d.get("razorpay_payment_id",""),
+            d.get("certificate_status",""), d.get("certificate_number",""),
+            d.get("created_at",""), d.get("paid_at",""),
+        ])
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="veritech-registrations.csv"'},
+    )
+
+
+@api.get("/admin/payments/export")
+async def admin_payments_export(email: str = Depends(require_admin)):
+    docs = await db.payments.find({}).sort("created_at", -1).to_list(10000)
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow([
+        "Razorpay Order ID", "Registration ID", "Name", "Email",
+        "Razorpay Payment ID", "Amount", "Currency", "Status", "Mode",
+        "Created At", "Paid At",
+    ])
+    for d in docs:
+        reg = await db.registrations.find_one({"registration_id": d.get("registration_id","")})
+        w.writerow([
+            d.get("razorpay_order_id",""), d.get("registration_id",""),
+            (reg or {}).get("full_name",""), (reg or {}).get("email",""),
+            d.get("razorpay_payment_id",""), d.get("amount",""),
+            d.get("currency","INR"), d.get("status",""), d.get("mode",""),
+            d.get("created_at",""), d.get("paid_at",""),
+        ])
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="veritech-payments.csv"'},
+    )
 
 
 @api.post("/admin/certificates/{registration_id}/generate")
@@ -703,6 +797,22 @@ def _build_certificate_pdf(reg: dict) -> bytes:
     c.setFont("Helvetica", 9)
     c.setFillColor(muted)
     c.drawRightString(w - 1.0 * inch, 0.72 * inch, f"Issued on {datetime.now(timezone.utc).strftime('%d %B %Y')}")
+
+    # QR code linking to public verification page
+    if reg.get("certificate_number"):
+        try:
+            verify_url = f"{FRONTEND_URL}/verify/{reg['certificate_number']}"
+            qr_img = qrcode.make(verify_url)
+            qr_buf = io.BytesIO()
+            qr_img.save(qr_buf, format="PNG")
+            qr_buf.seek(0)
+            c.drawImage(ImageReader(qr_buf), w - 2.0 * inch, 1.15 * inch,
+                        width=1.1 * inch, height=1.1 * inch, mask="auto")
+            c.setFont("Helvetica", 7)
+            c.setFillColor(muted)
+            c.drawRightString(w - 0.9 * inch, 1.05 * inch, "Scan to verify authenticity")
+        except Exception as e:
+            logger.error("QR generation failed: %s", e)
 
     c.showPage()
     c.save()

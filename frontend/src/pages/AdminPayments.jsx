@@ -1,5 +1,16 @@
 import { useEffect, useState } from "react";
-import { api, formatCurrency } from "../lib/api";
+import { FileDown } from "lucide-react";
+import { api, API_BASE, formatCurrency } from "../lib/api";
+
+async function downloadCsv(path, filename) {
+  const token = localStorage.getItem("veritech_admin_token");
+  const res = await fetch(`${API_BASE}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
 
 const StatusBadge = ({ s }) => {
   const map = {
@@ -16,9 +27,18 @@ export default function AdminPayments() {
 
   return (
     <div>
-      <div className="mb-4">
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">Payment Transactions</h1>
-        <p className="mt-1 text-sm text-slate-500">All Razorpay orders and their verification status.</p>
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">Payment Transactions</h1>
+          <p className="mt-1 text-sm text-slate-500">All Razorpay orders and their verification status.</p>
+        </div>
+        <button
+          onClick={() => downloadCsv("/admin/payments/export", "veritech-payments.csv")}
+          className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3.5 py-2 text-sm font-semibold text-white hover:bg-slate-800 whitespace-nowrap"
+          data-testid="export-payments-csv"
+        >
+          <FileDown className="h-4 w-4" /> Export CSV
+        </button>
       </div>
       <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
         <div className="overflow-x-auto">

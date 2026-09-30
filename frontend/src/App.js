@@ -18,15 +18,18 @@ import AdminDashboard from "@/pages/AdminDashboard";
 import AdminRegistrations from "@/pages/AdminRegistrations";
 import AdminPayments from "@/pages/AdminPayments";
 import AdminCertificates from "@/pages/AdminCertificates";
+import Verify from "@/pages/Verify";
 
 function Shell({ children }) {
   const loc = useLocation();
   const isAdmin = loc.pathname.startsWith("/admin");
+  const isVerify = loc.pathname.startsWith("/verify");
+  const hideChrome = isAdmin || isVerify;
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
-      {!isAdmin && <Header />}
+      {!hideChrome && <Header />}
       <div className="flex-1">{children}</div>
-      {!isAdmin && <Footer />}
+      {!hideChrome && <Footer />}
     </div>
   );
 }
@@ -46,6 +49,7 @@ function App() {
             <Route path="/success" element={<Success />} />
             <Route path="/failed" element={<Failed />} />
             <Route path="/status" element={<Status />} />
+            <Route path="/verify/:certNumber" element={<Verify />} />
             <Route path="/admin/login" element={<AdminLogin />} />
             <Route path="/admin" element={<AdminLayout />}>
               <Route index element={<AdminDashboard />} />
