@@ -123,6 +123,17 @@ class MockPay(BaseModel):
     success: bool = True
 
 
+class PaymentFailure(BaseModel):
+    registration_id: str
+    razorpay_order_id: Optional[str] = None
+    razorpay_payment_id: Optional[str] = None
+    code: Optional[str] = None
+    description: Optional[str] = None
+    reason: Optional[str] = None
+    source: Optional[str] = None
+    step: Optional[str] = None
+
+
 class AdminLogin(BaseModel):
     email: EmailStr
     password: str
@@ -438,6 +449,42 @@ async def verify_payment(body: PaymentVerify):
     await _mark_paid(body.registration_id, body.razorpay_order_id,
                     body.razorpay_payment_id, body.razorpay_signature)
     return {"verified": True}
+
+
+@api.post("/payments/record-failure")
+async def record_payment_failure(body: PaymentFailure):
+    """Store a Razorpay failure event. Never marks a paid order as failed."""
+    payment = await db.payments.find_one({"registration_id": body.registration_id})
+    if not payment:
+        raise HTTPException(404, "Order not found")
+    if payment.get("status") == "PAID":
+        # Payment already succeeded (e.g. retry after success) — ignore.
+        return {"recorded": False, "reason": "already_paid"}
+
+    failure = {
+        "razorpay_payment_id": body.razorpay_payment_id,
+        "failure_code": body.code,
+        "failure_reason": body.reason,
+        "failure_description": body.description,
+        "failure_source": body.source,
+        "failure_step": body.step,
+        "status": "FAILED",
+        "updated_at": now_iso(),
+    }
+    await db.payments.update_one(
+        {"registration_id": body.registration_id},
+        {"$set": failure},
+    )
+    await db.registrations.update_one(
+        {"registration_id": body.registration_id, "payment_status": {"$ne": "PAID"}},
+        {"$set": {
+            "payment_status": "FAILED",
+            "status": "PAYMENT_FAILED",
+            "last_failure_reason": body.description or body.reason,
+            "updated_at": now_iso(),
+        }},
+    )
+    return {"recorded": True}
 
 
 @api.post("/payments/mock-complete")

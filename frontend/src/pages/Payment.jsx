@@ -92,12 +92,35 @@ export default function Payment() {
         },
         modal: {
           ondismiss: () => {
-            toast.info("Payment cancelled. Your details are saved.");
+            // If Razorpay reported a failure earlier, user closed the failure screen → send them to /failed
+            if (window.__vt_payment_failed) {
+              window.__vt_payment_failed = false;
+              nav("/failed");
+            } else {
+              toast.info("Payment cancelled. Your details are saved.");
+            }
           },
         },
       };
+      window.__vt_payment_failed = false;
       const rz = new window.Razorpay(options);
-      rz.on("payment.failed", () => nav("/failed"));
+      rz.on("payment.failed", async (resp) => {
+        // Mark for /failed navigation on dismiss, and record the failure server-side.
+        // Do NOT close the modal — Razorpay shows its own failure screen with a Retry button.
+        window.__vt_payment_failed = true;
+        try {
+          await api.post("/payments/record-failure", {
+            registration_id: reg.registration_id,
+            razorpay_order_id: resp?.error?.metadata?.order_id,
+            razorpay_payment_id: resp?.error?.metadata?.payment_id,
+            code: resp?.error?.code,
+            description: resp?.error?.description,
+            reason: resp?.error?.reason,
+            source: resp?.error?.source,
+            step: resp?.error?.step,
+          });
+        } catch { /* non-blocking */ }
+      });
       rz.open();
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Could not initiate payment");
