@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { TrendingUp, Users, CheckCircle2, Clock, XCircle, Award } from "lucide-react";
 import { api, formatCurrency } from "../lib/api";
+import FailureAnalytics from "../components/FailureAnalytics";
 
 const KPI = ({ icon: Icon, label, value, tone = "slate", testid }) => {
   const toneMap = {
@@ -46,13 +47,18 @@ export default function AdminDashboard() {
         <KPI icon={Award} label="Certificates" value={stats?.certificates_generated ?? "—"} tone="slate" testid="kpi-certificates" />
       </div>
 
-      <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-6">
-        <h2 className="text-base font-bold text-slate-900">Quick actions</h2>
-        <p className="mt-1 text-sm text-slate-500">Manage registrations, verify payments, and issue certificates.</p>
-        <div className="mt-4 flex flex-wrap gap-2 text-sm">
-          <a href="/admin/registrations" className="rounded-xl bg-slate-900 px-4 py-2 font-semibold text-white hover:bg-slate-800">Manage Registrations</a>
-          <a href="/admin/payments" className="rounded-xl border border-slate-200 bg-white px-4 py-2 font-semibold text-slate-800 hover:border-slate-300">View Payments</a>
-          <a href="/admin/certificates" className="rounded-xl border border-slate-200 bg-white px-4 py-2 font-semibold text-slate-800 hover:border-slate-300">Certificate Manager</a>
+      <div className="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div className="lg:col-span-2">
+          <FailureAnalytics />
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-6">
+          <h2 className="text-base font-bold text-slate-900">Quick actions</h2>
+          <p className="mt-1 text-sm text-slate-500">Manage registrations, verify payments, and issue certificates.</p>
+          <div className="mt-4 flex flex-col gap-2 text-sm">
+            <a href="/admin/registrations" className="rounded-xl bg-slate-900 px-4 py-2 font-semibold text-white hover:bg-slate-800 text-center">Manage Registrations</a>
+            <a href="/admin/payments" className="rounded-xl border border-slate-200 bg-white px-4 py-2 font-semibold text-slate-800 hover:border-slate-300 text-center">View Payments</a>
+            <a href="/admin/certificates" className="rounded-xl border border-slate-200 bg-white px-4 py-2 font-semibold text-slate-800 hover:border-slate-300 text-center">Certificate Manager</a>
+          </div>
         </div>
       </div>
     </div>

@@ -134,6 +134,11 @@ class PaymentFailure(BaseModel):
     step: Optional[str] = None
 
 
+class RefundRequest(BaseModel):
+    reason: str = Field(min_length=3, max_length=500)
+    amount: Optional[int] = None  # in rupees; if None → full refund
+
+
 class AdminLogin(BaseModel):
     email: EmailStr
     password: str
@@ -639,6 +644,128 @@ async def admin_registrations(
     if internship_type:
         q["internship_type"] = internship_type
     docs = await db.registrations.find(q).sort("created_at", -1).to_list(500)
+    return [clean(d) for d in docs]
+
+
+@api.get("/admin/failure-analytics")
+async def admin_failure_analytics(email: str = Depends(require_admin)):
+    """Breakdown of failed payments by Razorpay-reported reason/code."""
+    total_failed = await db.payments.count_documents({"status": "FAILED"})
+
+    async def _agg(field: str, label_default: str):
+        pipeline = [
+            {"$match": {"status": "FAILED"}},
+            {"$group": {"_id": {"$ifNull": [f"${field}", label_default]}, "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}},
+            {"$limit": 10},
+        ]
+        rows = await db.payments.aggregate(pipeline).to_list(20)
+        return [{"label": r["_id"], "count": r["count"]} for r in rows]
+
+    by_description = await _agg("failure_description", "Unknown reason")
+    by_code = await _agg("failure_code", "UNKNOWN")
+    by_step = await _agg("failure_step", "unknown")
+    return {
+        "total_failed": total_failed,
+        "by_description": by_description,
+        "by_code": by_code,
+        "by_step": by_step,
+    }
+
+
+@api.post("/admin/payments/{registration_id}/refund")
+async def admin_refund_payment(
+    registration_id: str,
+    body: RefundRequest,
+    email: str = Depends(require_admin),
+):
+    payment = await db.payments.find_one({"registration_id": registration_id})
+    if not payment:
+        raise HTTPException(404, "Payment not found")
+    if payment.get("status") != "PAID":
+        raise HTTPException(400, "Only paid payments can be refunded")
+    if payment.get("status") == "REFUNDED":
+        raise HTTPException(400, "Payment already refunded")
+    if not payment.get("razorpay_payment_id"):
+        raise HTTPException(400, "No Razorpay payment ID on record")
+
+    full_amount_rupees = int(payment["amount"])
+    refund_rupees = body.amount if body.amount and body.amount > 0 else full_amount_rupees
+    if refund_rupees > full_amount_rupees:
+        raise HTTPException(400, "Refund amount cannot exceed captured amount")
+    refund_paise = refund_rupees * 100
+
+    rz = get_razorpay_client()
+    if rz is None or payment.get("mode") == "mock":
+        refund_id = f"rfnd_mock_{registration_id.replace('-', '')}"
+        gateway_response = {"mock": True}
+    else:
+        try:
+            rf = rz.payment.refund(payment["razorpay_payment_id"], {
+                "amount": refund_paise,
+                "notes": {
+                    "registration_id": registration_id,
+                    "reason": body.reason,
+                    "refunded_by": email,
+                },
+            })
+            refund_id = rf.get("id")
+            gateway_response = rf
+        except Exception as e:
+            logger.error("Razorpay refund failed: %s", e)
+            raise HTTPException(502, f"Razorpay refund failed: {e}")
+
+    now = now_iso()
+    is_full = refund_rupees == full_amount_rupees
+    payment_status = "REFUNDED" if is_full else "PARTIALLY_REFUNDED"
+    reg_status = "REFUNDED" if is_full else "PARTIALLY_REFUNDED"
+
+    await db.payments.update_one(
+        {"registration_id": registration_id},
+        {"$set": {
+            "status": payment_status,
+            "refund_id": refund_id,
+            "refund_amount": refund_rupees,
+            "refund_reason": body.reason,
+            "refunded_by": email,
+            "refunded_at": now,
+            "updated_at": now,
+        }},
+    )
+    await db.registrations.update_one(
+        {"registration_id": registration_id},
+        {"$set": {
+            "payment_status": payment_status,
+            "status": reg_status,
+            "refund_id": refund_id,
+            "refunded_at": now,
+            "updated_at": now,
+        }},
+    )
+    # Audit log
+    await db.audit_logs.insert_one({
+        "kind": "refund",
+        "registration_id": registration_id,
+        "razorpay_payment_id": payment["razorpay_payment_id"],
+        "refund_id": refund_id,
+        "amount": refund_rupees,
+        "reason": body.reason,
+        "actor": email,
+        "gateway_response": gateway_response,
+        "created_at": now,
+    })
+    return {
+        "refunded": True,
+        "refund_id": refund_id,
+        "amount": refund_rupees,
+        "status": payment_status,
+    }
+
+
+@api.get("/admin/audit-logs")
+async def admin_audit_logs(email: str = Depends(require_admin), kind: Optional[str] = None):
+    q = {"kind": kind} if kind else {}
+    docs = await db.audit_logs.find(q).sort("created_at", -1).to_list(200)
     return [clean(d) for d in docs]
 
 
