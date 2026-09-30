@@ -9,13 +9,14 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional
 
+import base64
 import csv
 import bcrypt
 import jwt as pyjwt
 import qrcode
 import razorpay
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, APIRouter, HTTPException, Header, Query
+from fastapi import Depends, FastAPI, APIRouter, HTTPException, Header, Query, UploadFile, File
 from fastapi.responses import StreamingResponse, Response
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, EmailStr, Field
@@ -706,7 +707,8 @@ async def download_certificate(registration_id: str):
         )
         reg["certificate_number"] = cert_number
 
-    pdf_bytes = _build_certificate_pdf(reg)
+    branding = await _get_branding()
+    pdf_bytes = _build_certificate_pdf(reg, branding)
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
@@ -722,14 +724,98 @@ async def preview_certificate(registration_id: str, email: str = Depends(require
         raise HTTPException(404, "Registration not found")
     reg = clean(reg)
     if not reg.get("certificate_number"):
-        # Use a preview placeholder — does NOT persist
         reg["certificate_number"] = f"VT-CERT-{datetime.now(timezone.utc).year}-{registration_id.split('-')[-1]} (PREVIEW)"
-    pdf_bytes = _build_certificate_pdf(reg)
+    branding = await _get_branding()
+    pdf_bytes = _build_certificate_pdf(reg, branding)
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="{registration_id}-preview.pdf"'},
     )
+
+
+# ============================================================
+# Branding (signature + seal) — admin only
+# ============================================================
+ALLOWED_IMG_MIME = {"image/png", "image/jpeg", "image/jpg", "image/webp"}
+MAX_IMG_BYTES = 2 * 1024 * 1024  # 2 MB
+
+
+async def _get_branding() -> dict:
+    doc = await db.settings.find_one({"_id": "branding"})
+    return clean(doc) if doc else {}
+
+
+async def _save_branding_field(field: str, b64: Optional[str], mime: Optional[str]):
+    await db.settings.update_one(
+        {"_id": "branding"},
+        {"$set": {
+            f"{field}_b64": b64,
+            f"{field}_mime": mime,
+            f"{field}_updated_at": now_iso(),
+        }},
+        upsert=True,
+    )
+
+
+async def _upload_image(field: str, file: UploadFile) -> dict:
+    if file.content_type not in ALLOWED_IMG_MIME:
+        raise HTTPException(400, "Please upload a PNG, JPG or WEBP image")
+    data = await file.read()
+    if len(data) > MAX_IMG_BYTES:
+        raise HTTPException(400, "Image must be under 2 MB")
+    if len(data) == 0:
+        raise HTTPException(400, "Empty file")
+    b64 = base64.b64encode(data).decode()
+    await _save_branding_field(field, b64, file.content_type)
+    return {"ok": True, "size": len(data), "mime": file.content_type}
+
+
+@api.get("/admin/branding")
+async def admin_get_branding(email: str = Depends(require_admin)):
+    b = await _get_branding()
+    return {
+        "signature": {
+            "present": bool(b.get("signature_b64")),
+            "mime": b.get("signature_mime"),
+            "updated_at": b.get("signature_updated_at"),
+        },
+        "seal": {
+            "present": bool(b.get("seal_b64")),
+            "mime": b.get("seal_mime"),
+            "updated_at": b.get("seal_updated_at"),
+        },
+    }
+
+
+@api.get("/admin/branding/{kind}/image")
+async def admin_get_branding_image(kind: str, email: str = Depends(require_admin)):
+    if kind not in ("signature", "seal"):
+        raise HTTPException(404, "Not found")
+    b = await _get_branding()
+    b64 = b.get(f"{kind}_b64")
+    mime = b.get(f"{kind}_mime") or "image/png"
+    if not b64:
+        raise HTTPException(404, f"No {kind} uploaded")
+    return Response(content=base64.b64decode(b64), media_type=mime)
+
+
+@api.post("/admin/branding/signature")
+async def admin_upload_signature(file: UploadFile = File(...), email: str = Depends(require_admin)):
+    return await _upload_image("signature", file)
+
+
+@api.post("/admin/branding/seal")
+async def admin_upload_seal(file: UploadFile = File(...), email: str = Depends(require_admin)):
+    return await _upload_image("seal", file)
+
+
+@api.delete("/admin/branding/{kind}")
+async def admin_delete_branding(kind: str, email: str = Depends(require_admin)):
+    if kind not in ("signature", "seal"):
+        raise HTTPException(404, "Not found")
+    await _save_branding_field(kind, None, None)
+    return {"ok": True}
 
 
 @api.get("/receipts/{registration_id}/download")
@@ -750,7 +836,7 @@ async def download_receipt(registration_id: str):
 # ============================================================
 # PDF generation
 # ============================================================
-def _build_certificate_pdf(reg: dict) -> bytes:
+def _build_certificate_pdf(reg: dict, branding: Optional[dict] = None) -> bytes:
     buf = io.BytesIO()
     c = pdf_canvas.Canvas(buf, pagesize=landscape(A4))
     w, h = landscape(A4)
@@ -811,10 +897,38 @@ def _build_certificate_pdf(reg: dict) -> bytes:
     c.setFont("Helvetica-Bold", 10)
     c.drawString(1.0 * inch, 0.9 * inch, f"Certificate No: {reg.get('certificate_number', '')}")
     c.drawString(1.0 * inch, 0.72 * inch, f"Registration ID: {reg['registration_id']}")
+
+    # Signature image (bottom right) - falls back to text line
+    sig_y = 1.35 * inch
+    if branding and branding.get("signature_b64"):
+        try:
+            sig_bytes = base64.b64decode(branding["signature_b64"])
+            c.drawImage(ImageReader(io.BytesIO(sig_bytes)), w - 3.4 * inch, sig_y,
+                        width=1.6 * inch, height=0.7 * inch,
+                        mask="auto", preserveAspectRatio=True)
+        except Exception as e:
+            logger.error("signature draw failed: %s", e)
+    # Signature line + label always drawn
+    c.setStrokeColor(muted)
+    c.setLineWidth(0.7)
+    c.line(w - 3.4 * inch, sig_y - 0.05 * inch, w - 1.0 * inch, sig_y - 0.05 * inch)
+    c.setFillColor(navy)
+    c.setFont("Helvetica-Bold", 10)
     c.drawRightString(w - 1.0 * inch, 0.9 * inch, "Veritech.AI Authorized Signatory")
     c.setFont("Helvetica", 9)
     c.setFillColor(muted)
     c.drawRightString(w - 1.0 * inch, 0.72 * inch, f"Issued on {datetime.now(timezone.utc).strftime('%d %B %Y')}")
+
+    # Seal image (bottom-center-left, near signature line)
+    if branding and branding.get("seal_b64"):
+        try:
+            seal_bytes = base64.b64decode(branding["seal_b64"])
+            c.drawImage(ImageReader(io.BytesIO(seal_bytes)),
+                        w / 2 - 0.55 * inch, 1.05 * inch,
+                        width=1.1 * inch, height=1.1 * inch,
+                        mask="auto", preserveAspectRatio=True)
+        except Exception as e:
+            logger.error("seal draw failed: %s", e)
 
     # QR code linking to public verification page
     if reg.get("certificate_number"):

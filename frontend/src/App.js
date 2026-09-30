@@ -18,6 +18,7 @@ import AdminDashboard from "@/pages/AdminDashboard";
 import AdminRegistrations from "@/pages/AdminRegistrations";
 import AdminPayments from "@/pages/AdminPayments";
 import AdminCertificates from "@/pages/AdminCertificates";
+import AdminBranding from "@/pages/AdminBranding";
 import Verify from "@/pages/Verify";
 
 function Shell({ children }) {
@@ -56,6 +57,7 @@ function App() {
               <Route path="registrations" element={<AdminRegistrations />} />
               <Route path="payments" element={<AdminPayments />} />
               <Route path="certificates" element={<AdminCertificates />} />
+              <Route path="branding" element={<AdminBranding />} />
             </Route>
           </Routes>
         </Shell>

@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate, Navigate } from "react-router-dom";
-import { LayoutDashboard, Users, Receipt, Award, LogOut } from "lucide-react";
+import { LayoutDashboard, Users, Receipt, Award, LogOut, Stamp } from "lucide-react";
 import { Logo } from "./Logo";
 import { setAdminToken } from "../lib/api";
 
@@ -8,6 +8,7 @@ const items = [
   { to: "/admin/registrations", label: "Registrations", icon: Users },
   { to: "/admin/payments", label: "Payments", icon: Receipt },
   { to: "/admin/certificates", label: "Certificates", icon: Award },
+  { to: "/admin/branding", label: "Branding", icon: Stamp },
 ];
 
 export default function AdminLayout() {
