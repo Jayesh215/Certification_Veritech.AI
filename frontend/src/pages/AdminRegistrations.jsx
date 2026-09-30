@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Search, Download, FileDown } from "lucide-react";
-import { api, API_BASE, formatCurrency } from "../lib/api";
+import { api, API_BASE, formatCurrency, formatDurationShort } from "../lib/api";
 
 async function downloadCsv(path, filename) {
   const token = localStorage.getItem("veritech_admin_token");
@@ -73,6 +73,7 @@ export default function AdminRegistrations() {
         </select>
         <select value={duration} onChange={(e) => setDuration(e.target.value)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm" data-testid="filter-duration">
           <option value="">All durations</option>
+          <option value="0">1 Day</option>
           <option value="1">1 Month</option>
           <option value="2">2 Months</option>
           <option value="3">3 Months</option>
@@ -102,7 +103,7 @@ export default function AdminRegistrations() {
                   <td className="px-4 py-3">{r.full_name}</td>
                   <td className="px-4 py-3 text-slate-600">{r.email}</td>
                   <td className="px-4 py-3 text-slate-600">{r.internship_type}</td>
-                  <td className="px-4 py-3">{r.duration_months}M</td>
+                  <td className="px-4 py-3">{formatDurationShort(r.duration_months)}</td>
                   <td className="px-4 py-3 font-mono-tabular">{formatCurrency(r.amount)}</td>
                   <td className="px-4 py-3"><StatusBadge s={r.payment_status} /></td>
                   <td className="px-4 py-3">

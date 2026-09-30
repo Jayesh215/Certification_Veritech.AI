@@ -35,7 +35,7 @@ def _payment_success_html(reg: dict) -> str:
               <tr><td style="padding:14px 18px;color:#64748B;font-size:13px;border-top:1px solid #F1F5F9;">Certificate</td>
                   <td style="padding:14px 18px;color:#0F172A;font-size:13px;font-weight:700;text-align:right;border-top:1px solid #F1F5F9;">{reg.get('certificate_type','Internship Certificate')}</td></tr>
               <tr><td style="padding:14px 18px;color:#64748B;font-size:13px;border-top:1px solid #F1F5F9;">Duration</td>
-                  <td style="padding:14px 18px;color:#0F172A;font-size:13px;font-weight:700;text-align:right;border-top:1px solid #F1F5F9;">{reg.get('duration_months','')} Month(s)</td></tr>
+                  <td style="padding:14px 18px;color:#0F172A;font-size:13px;font-weight:700;text-align:right;border-top:1px solid #F1F5F9;">{('1 Day' if reg.get('duration_months') == 0 else f"{reg.get('duration_months','')} Month(s)")}</td></tr>
               <tr><td style="padding:14px 18px;color:#64748B;font-size:13px;border-top:1px solid #F1F5F9;">Payment ID</td>
                   <td style="padding:14px 18px;color:#0F172A;font-size:13px;font-weight:700;text-align:right;border-top:1px solid #F1F5F9;">{reg.get('razorpay_payment_id','')}</td></tr>
               <tr><td style="padding:14px 18px;color:#64748B;font-size:13px;border-top:1px solid #F1F5F9;">Amount Paid</td>

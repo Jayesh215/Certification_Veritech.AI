@@ -2,7 +2,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { CheckCircle2, Download, ArrowRight } from "lucide-react";
 import Stepper from "../components/Stepper";
 import { useRegistration } from "../context/RegistrationContext";
-import { API_BASE, formatCurrency } from "../lib/api";
+import { API_BASE, formatCurrency, formatDuration } from "../lib/api";
 
 function InfoRow({ label, value, mono }) {
   return (
@@ -62,7 +62,7 @@ export default function Success() {
             <InfoRow label="Registration ID" value={reg.registration_id} mono />
             <InfoRow label="Payment ID" value={reg.razorpay_payment_id} mono />
             <InfoRow label="Certificate" value={reg.certificate_type} />
-            <InfoRow label="Duration" value={`${reg.duration_months} Month${reg.duration_months > 1 ? "s" : ""}`} />
+            <InfoRow label="Duration" value={formatDuration(reg.duration_months)} />
             <InfoRow label="Amount Paid" value={formatCurrency(reg.amount)} mono />
             <InfoRow label="Email" value={reg.email} />
             <InfoRow label="Payment Status" value={<span className="text-emerald-700">PAID</span>} />

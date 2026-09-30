@@ -2,7 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { Pencil, ArrowRight } from "lucide-react";
 import Stepper from "../components/Stepper";
 import { useRegistration } from "../context/RegistrationContext";
-import { formatCurrency } from "../lib/api";
+import { formatCurrency, formatDuration } from "../lib/api";
 
 function Row({ label, value }) {
   return (
@@ -69,7 +69,7 @@ export default function Review() {
             <div className="mt-4 h-px bg-slate-100" />
             <div className="mt-4 divide-y divide-slate-100">
               <Row label="Certificate" value={reg.certificate_type} />
-              <Row label="Duration" value={`${reg.duration_months} Month${reg.duration_months > 1 ? "s" : ""}`} />
+              <Row label="Duration" value={formatDuration(reg.duration_months)} />
               <Row label="Amount" value={formatCurrency(reg.amount)} />
             </div>
           </div>

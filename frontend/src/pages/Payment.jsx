@@ -4,14 +4,14 @@ import { toast } from "sonner";
 import { Loader2, ShieldCheck, Lock } from "lucide-react";
 import Stepper from "../components/Stepper";
 import { useRegistration } from "../context/RegistrationContext";
-import { api, formatCurrency } from "../lib/api";
+import { api, formatCurrency, formatDuration } from "../lib/api";
 
 export default function Payment() {
   const nav = useNavigate();
   const { state, update } = useRegistration();
   const reg = state.registration;
   const [plans, setPlans] = useState([]);
-  const [selected, setSelected] = useState(reg?.duration_months || 3);
+  const [selected, setSelected] = useState(reg?.duration_months ?? 3);
   const [processing, setProcessing] = useState(false);
 
   useEffect(() => {
@@ -119,11 +119,12 @@ export default function Payment() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {plans.map((p) => {
               const active = selected === p.duration_months;
+              const key = p.duration_months === 0 ? "1d" : `${p.duration_months}m`;
               return (
                 <button
                   key={p.duration_months}
                   onClick={() => setSelected(p.duration_months)}
-                  data-testid={`duration-card-${p.duration_months}m`}
+                  data-testid={`duration-card-${key}`}
                   className={`relative text-left rounded-2xl border p-5 sm:p-6 transition-all ${
                     active
                       ? "border-blue-600 bg-blue-50/40 shadow-md ring-1 ring-blue-600/10"
@@ -159,7 +160,7 @@ export default function Payment() {
           <div className="mt-4 space-y-3 text-sm">
             <div className="flex justify-between"><span className="text-slate-500">Intern</span><span className="font-semibold text-slate-900">{reg.full_name}</span></div>
             <div className="flex justify-between"><span className="text-slate-500">Certificate</span><span className="font-semibold text-slate-900">{reg.certificate_type}</span></div>
-            <div className="flex justify-between"><span className="text-slate-500">Duration</span><span className="font-semibold text-slate-900">{selected} Month{selected > 1 ? "s" : ""}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Duration</span><span className="font-semibold text-slate-900">{formatDuration(selected)}</span></div>
             <div className="flex justify-between"><span className="text-slate-500">Registration ID</span><span className="font-mono-tabular text-xs font-semibold text-slate-900">{reg.registration_id}</span></div>
           </div>
           <div className="my-5 h-px bg-slate-100" />

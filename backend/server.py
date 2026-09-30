@@ -71,7 +71,7 @@ CERTIFICATE_TYPES = [
     "Internship Certificate", "Internship Completion Certificate",
     "Training Certificate", "Other",
 ]
-DURATION_MONTHS = {1, 2, 3, 6}
+DURATION_MONTHS = {0, 1, 2, 3, 6}  # 0 = "1 Day" express plan
 
 
 class RegistrationCreate(BaseModel):
@@ -189,6 +189,8 @@ async def get_plan(duration_months: int) -> dict:
 # Startup - seed plans and admin
 # ============================================================
 DEFAULT_PLANS = [
+    {"name": "1 Day", "duration_months": 0, "price": 1, "currency": "INR",
+     "description": "Express same-day certificate", "is_active": True, "popular": False},
     {"name": "1 Month", "duration_months": 1, "price": 99, "currency": "INR",
      "description": "Official Veritech.AI Certificate", "is_active": True, "popular": False},
     {"name": "2 Months", "duration_months": 2, "price": 149, "currency": "INR",
@@ -876,10 +878,10 @@ def _build_certificate_pdf(reg: dict, branding: Optional[dict] = None) -> bytes:
 
     c.setFillColor(muted)
     c.setFont("Helvetica", 13)
-    c.drawCentredString(
-        w / 2, h - 4.2 * inch,
-        f"has successfully completed a {reg['duration_months']}-month internship program in",
-    )
+    duration_text = ("has successfully completed a 1-day internship program in"
+                     if reg["duration_months"] == 0
+                     else f"has successfully completed a {reg['duration_months']}-month internship program in")
+    c.drawCentredString(w / 2, h - 4.2 * inch, duration_text)
 
     c.setFillColor(blue)
     c.setFont("Helvetica-Bold", 18)
@@ -982,7 +984,7 @@ def _build_receipt_pdf(reg: dict) -> bytes:
         ("Email", reg["email"]),
         ("Mobile", reg["mobile"]),
         ("Certificate", reg.get("certificate_type", "Internship Certificate")),
-        ("Duration", f"{reg['duration_months']} Month(s)"),
+        ("Duration", "1 Day" if reg['duration_months'] == 0 else f"{reg['duration_months']} Month(s)"),
         ("Payment ID", reg.get("razorpay_payment_id", "")),
         ("Order ID", reg.get("razorpay_order_id", "")),
         ("Payment Date", reg.get("paid_at", "")[:10]),

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Award, Download, Eye, FileDown, X, Loader2 } from "lucide-react";
-import { api, API_BASE } from "../lib/api";
+import { api, API_BASE, formatDurationShort } from "../lib/api";
 
 const StatusBadge = ({ s }) => {
   const map = {
@@ -90,7 +90,7 @@ export default function AdminCertificates() {
                     <div className="text-xs text-slate-500">{r.email}</div>
                   </td>
                   <td className="px-4 py-3 text-slate-600">{r.internship_type}</td>
-                  <td className="px-4 py-3">{r.duration_months}M</td>
+                  <td className="px-4 py-3">{formatDurationShort(r.duration_months)}</td>
                   <td className="px-4 py-3 font-mono-tabular text-xs">{r.certificate_number || "—"}</td>
                   <td className="px-4 py-3"><StatusBadge s={r.certificate_status} /></td>
                   <td className="px-4 py-3">

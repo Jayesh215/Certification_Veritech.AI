@@ -14,7 +14,7 @@ const INTERNSHIP_TYPES = [
 ];
 const CERT_TYPES = ["Internship Certificate", "Internship Completion Certificate", "Training Certificate", "Other"];
 const YEARS = ["2026", "2027", "2028", "2029", "2030", "Other"];
-const DURATIONS = [1, 2, 3, 6];
+const DURATIONS = [0, 1, 2, 3, 6];
 
 const emptyForm = {
   full_name: "", email: "", mobile: "",
@@ -67,7 +67,7 @@ export default function Register() {
     if (!form.internship_type) e.internship_type = "Please select your internship type.";
     if (!form.internship_start_date) e.internship_start_date = "Please select a start date.";
     if (!form.internship_end_date) e.internship_end_date = "Please select an end date.";
-    if (!form.duration_months) e.duration_months = "Please select certificate duration.";
+    if (form.duration_months === "" || form.duration_months === null || form.duration_months === undefined) e.duration_months = "Please select certificate duration.";
     if (!form.declaration_accepted) e.declaration_accepted = "Please accept the declaration.";
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -195,20 +195,20 @@ export default function Register() {
               </select>
             </Field>
             <Field label="Certificate Duration" required error={errors.duration_months}>
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-5 gap-2">
                 {DURATIONS.map((m) => (
                   <button
                     type="button"
                     key={m}
                     onClick={() => set("duration_months", m)}
-                    data-testid={`duration-pill-${m}m`}
+                    data-testid={`duration-pill-${m === 0 ? "1d" : m + "m"}`}
                     className={`rounded-xl border px-2.5 py-2 text-sm font-semibold transition-all ${
                       form.duration_months === m
                         ? "border-blue-600 bg-blue-50 text-blue-700"
                         : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
                     }`}
                   >
-                    {m}M
+                    {m === 0 ? "1D" : `${m}M`}
                   </button>
                 ))}
               </div>

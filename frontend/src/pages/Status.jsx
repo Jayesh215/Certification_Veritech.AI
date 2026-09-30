@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { Search, Loader2 } from "lucide-react";
-import { api, formatCurrency } from "../lib/api";
+import { api, formatCurrency, formatDuration } from "../lib/api";
 
 const StatusBadge = ({ status }) => {
   const map = {
@@ -78,7 +78,7 @@ export default function Status() {
             <Info label="Email" value={reg.email} />
             <Info label="Internship" value={reg.internship_type} />
             <Info label="Certificate" value={reg.certificate_type} />
-            <Info label="Duration" value={`${reg.duration_months} Month${reg.duration_months > 1 ? "s" : ""}`} />
+            <Info label="Duration" value={formatDuration(reg.duration_months)} />
             <Info label="Amount" value={formatCurrency(reg.amount)} />
             <Info label="Certificate Status" value={reg.certificate_status} />
             <Info label="Registered On" value={reg.created_at?.slice(0, 10)} />
