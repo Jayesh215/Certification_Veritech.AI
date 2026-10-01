@@ -1,20 +1,8 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { Search, Loader2 } from "lucide-react";
-import { api, formatCurrency, formatDuration } from "../lib/api";
-
-const StatusBadge = ({ status }) => {
-  const map = {
-    PAID: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    PENDING: "bg-amber-50 text-amber-700 border-amber-200",
-    FAILED: "bg-red-50 text-red-700 border-red-200",
-  };
-  return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${map[status] || map.PENDING}`}>
-      {status}
-    </span>
-  );
-};
+import { Search, Loader2, Download, ArrowRight } from "lucide-react";
+import { Link } from "react-router-dom";
+import { api, API_BASE, formatDuration } from "../lib/api";
 
 export default function Status() {
   const [q, setQ] = useState("");
@@ -66,12 +54,30 @@ export default function Status() {
 
       {reg && (
         <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex items-start justify-between">
+          <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">Registration ID</p>
               <p className="mt-1 text-xl font-bold text-slate-900 font-mono-tabular">{reg.registration_id}</p>
             </div>
-            <StatusBadge status={reg.payment_status} />
+            {reg.payment_status === "PAID" ? (
+              <a
+                href={`${API_BASE}/certificates/${reg.registration_id}/download`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 transition-colors whitespace-nowrap"
+                data-testid="status-download-certificate-btn"
+              >
+                <Download className="h-4 w-4" /> Download Certificate
+              </a>
+            ) : (
+              <Link
+                to="/payment"
+                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition-colors whitespace-nowrap"
+                data-testid="status-complete-payment-btn"
+              >
+                Complete Payment <ArrowRight className="h-4 w-4" />
+              </Link>
+            )}
           </div>
           <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-y-3 gap-x-6">
             <Info label="Name" value={reg.full_name} />
@@ -79,7 +85,6 @@ export default function Status() {
             <Info label="Internship" value={reg.internship_type} />
             <Info label="Certificate" value={reg.certificate_type} />
             <Info label="Duration" value={formatDuration(reg.duration_months)} />
-            <Info label="Amount" value={formatCurrency(reg.amount)} />
             <Info label="Certificate Status" value={reg.certificate_status} />
             <Info label="Registered On" value={reg.created_at?.slice(0, 10)} />
           </div>
