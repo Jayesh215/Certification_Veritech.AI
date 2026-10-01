@@ -68,6 +68,135 @@ html, body {
   mask-image: radial-gradient(ellipse at top, black 40%, transparent 75%);
 }
 
+/* ============================================================
+   Modern landing animations (tasteful, reduced-motion aware)
+   ============================================================ */
+@keyframes vt-fade-up {
+  0%   { opacity: 0; transform: translateY(14px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+@keyframes vt-fade-in {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+@keyframes vt-float {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50%      { transform: translate3d(0, -8px, 0); }
+}
+@keyframes vt-blob {
+  0%, 100% { transform: translate3d(-6%, 0, 0) scale(1); }
+  33%      { transform: translate3d(8%, -4%, 0) scale(1.08); }
+  66%      { transform: translate3d(-4%, 6%, 0) scale(0.95); }
+}
+@keyframes vt-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.vt-anim-up {
+  opacity: 0;
+  animation: vt-fade-up 700ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.vt-anim-in {
+  opacity: 0;
+  animation: vt-fade-in 900ms ease-out forwards;
+}
+.vt-delay-1 { animation-delay: 80ms; }
+.vt-delay-2 { animation-delay: 180ms; }
+.vt-delay-3 { animation-delay: 280ms; }
+.vt-delay-4 { animation-delay: 380ms; }
+.vt-delay-5 { animation-delay: 480ms; }
+.vt-delay-6 { animation-delay: 580ms; }
+
+.vt-float { animation: vt-float 6s ease-in-out infinite; }
+
+.vt-blob {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 9999px;
+  filter: blur(60px);
+  opacity: 0.55;
+  animation: vt-blob 18s ease-in-out infinite;
+  will-change: transform;
+}
+
+.vt-shimmer-text {
+  background: linear-gradient(
+    90deg,
+    #2563EB 0%,
+    #60A5FA 25%,
+    #2563EB 50%,
+    #1D4ED8 75%,
+    #2563EB 100%
+  );
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: vt-shimmer 6s linear infinite;
+}
+
+/* Card hover lift */
+.vt-lift {
+  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 320ms cubic-bezier(0.22, 1, 0.36, 1),
+              border-color 320ms ease;
+  will-change: transform;
+}
+.vt-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 40px -24px rgba(15, 23, 42, 0.18);
+}
+
+/* Button shine */
+.vt-cta {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.vt-cta::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    110deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.35) 50%,
+    transparent 80%
+  );
+  transform: translateX(-120%);
+  transition: transform 650ms cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+.vt-cta:hover::after { transform: translateX(120%); }
+
+/* Icon tiles micro-interaction */
+.vt-icon-tile {
+  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1),
+              background-color 320ms ease;
+}
+.group:hover .vt-icon-tile {
+  transform: scale(1.08) rotate(-3deg);
+  background-color: #DBEAFE;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vt-anim-up, .vt-anim-in {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .vt-float, .vt-blob, .vt-shimmer-text { animation: none !important; }
+  .vt-shimmer-text {
+    background: none;
+    color: #2563EB;
+    -webkit-background-clip: initial;
+    background-clip: initial;
+  }
+  .vt-lift { transition: none; }
+  .vt-cta::after { display: none; }
+}
+
 /* Focus ring */
 .veritech-focus:focus-visible {
   outline: none;
