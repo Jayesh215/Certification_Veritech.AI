@@ -66,3 +66,22 @@ export const PLAN_PERKS = {
     "1-on-1 career guidance call with a mentor",
   ],
 };
+
+// Side-by-side comparison matrix. Each feature is tagged with the duration_months it ships in.
+export const COMPARISON_FEATURES = [
+  { label: "Official Veritech.AI certificate", in: [0, 1, 2, 3, 6] },
+  { label: "Downloadable PDF with QR verification", in: [0, 1, 2, 3, 6] },
+  { label: "LinkedIn-ready credential", in: [0, 1, 2, 3, 6] },
+  { label: "Public verification page", in: [0, 1, 2, 3, 6] },
+  { label: "Extended internship record on profile", in: [2, 3, 6] },
+  { label: "Priority email support", in: [2, 3, 6] },
+  { label: "Counts as professional work experience", in: [3, 6] },
+  { label: "Recognised by hiring teams at major tech companies", in: [3, 6] },
+  { label: "Signed Letter of Recommendation", in: [3, 6] },
+  { label: "Portfolio-ready credential", in: [3, 6] },
+  { label: "Priority mentor support", in: [3, 6] },
+  { label: "Full industry-grade internship experience", in: [6] },
+  { label: "Weighted higher in top-tier resume screening", in: [6] },
+  { label: "Featured on Veritech.AI alumni directory", in: [6] },
+  { label: "1-on-1 career guidance call", in: [6] },
+];

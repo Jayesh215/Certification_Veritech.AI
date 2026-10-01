@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Loader2, ShieldCheck, Lock, Check, Star } from "lucide-react";
+import { Loader2, ShieldCheck, Lock, Check, Star, Columns3 } from "lucide-react";
 import Stepper from "../components/Stepper";
+import ComparePlansModal from "../components/ComparePlansModal";
 import { useRegistration } from "../context/RegistrationContext";
 import { api, formatCurrency, formatDuration, PLAN_PERKS } from "../lib/api";
 
@@ -13,6 +14,7 @@ export default function Payment() {
   const [plans, setPlans] = useState([]);
   const [selected, setSelected] = useState(reg?.duration_months ?? 3);
   const [processing, setProcessing] = useState(false);
+  const [compareOpen, setCompareOpen] = useState(false);
 
   useEffect(() => {
     api.get("/plans").then((r) => setPlans(r.data)).catch(() => setPlans([]));
@@ -132,9 +134,18 @@ export default function Payment() {
   return (
     <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
       <Stepper current={3} />
-      <div className="mb-6">
-        <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">Choose your certificate duration</h1>
-        <p className="mt-2 text-slate-600">Select the certificate duration you want to register for.</p>
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+        <div>
+          <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">Choose your certificate duration</h1>
+          <p className="mt-2 text-slate-600">Select the certificate duration you want to register for.</p>
+        </div>
+        <button
+          onClick={() => setCompareOpen(true)}
+          className="inline-flex items-center gap-2 self-start rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-800 hover:border-blue-300 hover:text-blue-700 transition-colors whitespace-nowrap"
+          data-testid="open-compare-plans-btn"
+        >
+          <Columns3 className="h-4 w-4" /> Compare all plans
+        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
@@ -234,6 +245,13 @@ export default function Payment() {
           </div>
         </aside>
       </div>
+
+      <ComparePlansModal
+        open={compareOpen}
+        onClose={() => setCompareOpen(false)}
+        onSelect={(d) => setSelected(d)}
+        selectedDuration={selected}
+      />
     </div>
   );
 }
