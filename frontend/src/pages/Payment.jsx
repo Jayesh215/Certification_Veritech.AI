@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Loader2, ShieldCheck, Lock } from "lucide-react";
+import { Loader2, ShieldCheck, Lock, Check, Star } from "lucide-react";
 import Stepper from "../components/Stepper";
 import { useRegistration } from "../context/RegistrationContext";
-import { api, formatCurrency, formatDuration } from "../lib/api";
+import { api, formatCurrency, formatDuration, PLAN_PERKS } from "../lib/api";
 
 export default function Payment() {
   const nav = useNavigate();
@@ -143,6 +143,8 @@ export default function Payment() {
             {plans.map((p) => {
               const active = selected === p.duration_months;
               const key = p.duration_months === 0 ? "1d" : `${p.duration_months}m`;
+              const perks = PLAN_PERKS[p.duration_months] || [];
+              const career = p.duration_months === 3 || p.duration_months === 6;
               return (
                 <button
                   key={p.duration_months}
@@ -159,11 +161,35 @@ export default function Payment() {
                       Most Popular
                     </span>
                   )}
-                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{p.name}</p>
-                  <p className="mt-3 text-3xl font-extrabold text-slate-900 font-mono-tabular">
-                    ₹{p.price}
-                  </p>
-                  <p className="mt-1 text-sm text-slate-500">{p.description}</p>
+                  {p.duration_months === 0 && (
+                    <span className="absolute -top-2.5 left-5 rounded-full bg-amber-500 px-2.5 py-0.5 text-[10px] font-bold text-white uppercase tracking-wider">
+                      Express
+                    </span>
+                  )}
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{p.name}</p>
+                      <p className="mt-3 text-3xl font-extrabold text-slate-900 font-mono-tabular">₹{p.price}</p>
+                      <p className="mt-1 text-sm text-slate-500">{p.description}</p>
+                    </div>
+                    {career && (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 uppercase tracking-wider whitespace-nowrap">
+                        <Star className="h-3 w-3" /> Career
+                      </span>
+                    )}
+                  </div>
+
+                  {perks.length > 0 && (
+                    <ul className="mt-4 space-y-1.5 border-t border-slate-100 pt-4" data-testid={`perks-${key}`}>
+                      {perks.map((perk, i) => (
+                        <li key={i} className="flex items-start gap-2 text-xs text-slate-700 leading-relaxed">
+                          <Check className={`mt-0.5 h-3.5 w-3.5 flex-shrink-0 ${career ? "text-emerald-600" : "text-blue-600"}`} />
+                          <span>{perk}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
                   <div className={`mt-5 inline-flex items-center gap-1.5 text-xs font-semibold ${
                     active ? "text-blue-700" : "text-slate-500"
                   }`}>

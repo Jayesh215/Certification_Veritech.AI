@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ArrowRight, ShieldCheck, Award, QrCode, Sparkles } from "lucide-react";
+import { ArrowRight, ShieldCheck, Award, QrCode, Sparkles, Star } from "lucide-react";
 
 const trustPoints = [
   { icon: ShieldCheck, title: "Official Veritech.AI Portal", desc: "Authentic certificate registration with verified issuance." },
@@ -83,11 +83,11 @@ export default function Landing() {
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
             {[
-              { d: "1 Day", p: 1, express: true },
-              { d: "1 Month", p: 99 },
-              { d: "2 Months", p: 149 },
-              { d: "3 Months", p: 199, popular: true },
-              { d: "6 Months", p: 499 },
+              { d: "1 Day", p: 1, express: true, note: "Instant express" },
+              { d: "1 Month", p: 99, note: "LinkedIn-ready" },
+              { d: "2 Months", p: 149, note: "Extended record" },
+              { d: "3 Months", p: 199, popular: true, note: "Counts as work experience", career: true },
+              { d: "6 Months", p: 499, note: "Industry-grade internship", career: true },
             ].map((plan, i) => (
               <div
                 key={plan.d}
@@ -109,6 +109,12 @@ export default function Landing() {
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{plan.d}</p>
                 <p className="mt-2 text-2xl sm:text-3xl font-extrabold text-slate-900 font-mono-tabular">
                   ₹{plan.p}
+                </p>
+                <p className={`mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold ${
+                  plan.career ? "text-emerald-700" : "text-slate-500"
+                }`}>
+                  {plan.career && <Star className="h-3 w-3" />}
+                  {plan.note}
                 </p>
               </div>
             ))}

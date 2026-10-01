@@ -32,3 +32,37 @@ export const formatDuration = (m) => {
 };
 // Compact form for tables: "1D", "1M", "3M"
 export const formatDurationShort = (m) => (Number(m) === 0 ? "1D" : `${m}M`);
+
+// Perks shown on pricing cards. Keyed by duration_months.
+// 3M and 6M get the strongest career-value messaging.
+export const PLAN_PERKS = {
+  0: [
+    "Instant express certificate",
+    "Downloadable PDF with verification QR",
+    "Shareable on LinkedIn & resumes",
+  ],
+  1: [
+    "Official Veritech.AI certificate",
+    "LinkedIn-ready credential",
+    "Public QR-based verification page",
+  ],
+  2: [
+    "Everything in 1-Month plan",
+    "Extended internship record on your profile",
+    "Priority email support",
+  ],
+  3: [
+    "Counts as professional work experience",
+    "Recognised by hiring teams at major tech companies",
+    "Signed Letter of Recommendation on request",
+    "LinkedIn, resume & portfolio ready",
+    "Priority mentor support",
+  ],
+  6: [
+    "Full industry-grade internship experience",
+    "Weighted higher during top-tier resume screening",
+    "Signed Letter of Recommendation included",
+    "Featured on the Veritech.AI alumni directory",
+    "1-on-1 career guidance call with a mentor",
+  ],
+};
