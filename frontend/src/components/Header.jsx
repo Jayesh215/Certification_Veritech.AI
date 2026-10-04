@@ -3,24 +3,25 @@ import { Logo } from "./Logo";
 
 export default function Header() {
   const loc = useLocation();
+
   const linkCls = (path) =>
-    `text-sm font-medium transition-colors ${
+    `whitespace-nowrap text-xs sm:text-sm font-medium transition-colors ${
       loc.pathname === path
-        ? "text-slate-900"
-        : "text-slate-500 hover:text-slate-900"
+        ? "text-blue-700"
+        : "text-slate-600 hover:text-slate-900"
     }`;
 
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-slate-200 bg-white/90 backdrop-blur-md">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        <Link to="/" className="flex items-center gap-3" data-testid="header-logo-link">
-          <Logo className="h-7 sm:h-8" />
+    <header className="sticky top-0 z-40 w-full border-b border-slate-200 bg-white shadow-[0_8px_24px_-18px_rgba(15,23,42,0.35)]">
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
+        <Link to="/" className="flex min-w-0 items-center gap-3" data-testid="header-logo-link">
+          <Logo className="h-7 sm:h-9" />
           <span className="hidden sm:block h-6 w-px bg-slate-200" />
           <span className="hidden sm:block text-sm font-semibold text-slate-700 tracking-tight">
             Certificate Portal
           </span>
         </Link>
-        <nav className="flex items-center gap-4 sm:gap-6">
+        <nav className="flex shrink-0 items-center gap-2.5 sm:gap-6">
           <Link to="/register" className={linkCls("/register")} data-testid="nav-register-link">Register</Link>
           <Link to="/status" className={linkCls("/status")} data-testid="nav-status-link">Track Status</Link>
           <Link
@@ -32,6 +33,7 @@ export default function Header() {
           </Link>
         </nav>
       </div>
+      <div className="h-0.5 w-full bg-gradient-to-r from-blue-600 via-blue-500 to-blue-600" />
     </header>
   );
 }

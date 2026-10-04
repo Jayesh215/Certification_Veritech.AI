@@ -35,7 +35,7 @@ export default function Verify() {
         </Link>
 
         <div className="mt-6 flex items-center gap-3">
-          <Logo className="h-8" />
+          <Logo className="h-9" />
           <span className="h-6 w-px bg-slate-200" />
           <span className="text-sm font-semibold text-slate-700">Certificate Verification</span>
         </div>

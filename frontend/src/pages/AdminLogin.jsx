@@ -28,7 +28,7 @@ export default function AdminLogin() {
     <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center px-4">
       <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-7 shadow-md">
         <div className="flex items-center gap-3 mb-6">
-          <Logo className="h-8" />
+          <Logo className="h-9" />
           <span className="h-6 w-px bg-slate-200" />
           <span className="text-sm font-semibold text-slate-700">Admin Console</span>
         </div>

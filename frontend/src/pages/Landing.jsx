@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ArrowRight, ShieldCheck, Award, QrCode, Sparkles, Star } from "lucide-react";
+import { ArrowRight, ShieldCheck, Award, QrCode } from "lucide-react";
 
 const trustPoints = [
   { icon: ShieldCheck, title: "Official Veritech.AI Portal", desc: "Authentic certificate registration with verified issuance." },
@@ -10,7 +10,6 @@ const trustPoints = [
 export default function Landing() {
   return (
     <div className="relative overflow-hidden">
-      {/* Hero backdrop: grid + soft colour blobs */}
       <div className="absolute inset-x-0 top-0 h-[620px] hero-grid pointer-events-none" />
       <div className="vt-blob" style={{ top: "-80px", left: "-80px", width: "420px", height: "420px", background: "radial-gradient(circle, #93C5FD 0%, transparent 70%)" }} />
       <div className="vt-blob" style={{ top: "120px", right: "-100px", width: "380px", height: "380px", background: "radial-gradient(circle, #DBEAFE 0%, transparent 70%)", animationDelay: "-6s" }} />
@@ -66,59 +65,6 @@ export default function Landing() {
               <p className="mt-1 text-sm text-slate-500 leading-relaxed">{desc}</p>
             </div>
           ))}
-        </div>
-
-        {/* Pricing preview */}
-        <div className="vt-anim-up vt-delay-6 mt-16 rounded-3xl border border-slate-200 bg-white p-6 sm:p-8 shadow-sm">
-          <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4 mb-6">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Certificate Plans</p>
-              <h2 className="mt-1 text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
-                Transparent pricing. No surprises.
-              </h2>
-            </div>
-            <div className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500">
-              <Sparkles className="h-3.5 w-3.5 text-blue-600 vt-float" /> Choose any duration during checkout
-            </div>
-          </div>
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-            {[
-              { d: "1 Day", p: 1, express: true, note: "Instant express" },
-              { d: "1 Month", p: 99, note: "LinkedIn-ready" },
-              { d: "2 Months", p: 149, note: "Extended record" },
-              { d: "3 Months", p: 199, popular: true, note: "Counts as work experience", career: true },
-              { d: "6 Months", p: 499, note: "Industry-grade internship", career: true },
-            ].map((plan, i) => (
-              <div
-                key={plan.d}
-                className={`vt-lift relative rounded-2xl border p-4 sm:p-5 transition-all ${
-                  plan.popular ? "border-blue-600 bg-blue-50/40" : "border-slate-200 bg-white hover:border-blue-200"
-                }`}
-                style={{ transitionDelay: `${i * 30}ms` }}
-              >
-                {plan.popular && (
-                  <span className="absolute -top-2.5 right-4 rounded-full bg-blue-600 px-2.5 py-0.5 text-[10px] font-bold text-white uppercase tracking-wider shadow-sm">
-                    Popular
-                  </span>
-                )}
-                {plan.express && (
-                  <span className="absolute -top-2.5 right-4 rounded-full bg-amber-500 px-2.5 py-0.5 text-[10px] font-bold text-white uppercase tracking-wider shadow-sm">
-                    Express
-                  </span>
-                )}
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{plan.d}</p>
-                <p className="mt-2 text-2xl sm:text-3xl font-extrabold text-slate-900 font-mono-tabular">
-                  ₹{plan.p}
-                </p>
-                <p className={`mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold ${
-                  plan.career ? "text-emerald-700" : "text-slate-500"
-                }`}>
-                  {plan.career && <Star className="h-3 w-3" />}
-                  {plan.note}
-                </p>
-              </div>
-            ))}
-          </div>
         </div>
       </section>
     </div>

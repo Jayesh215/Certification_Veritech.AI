@@ -26,7 +26,7 @@ export default function AdminLayout() {
       <div className="flex">
         <aside className="hidden lg:flex w-64 min-h-screen bg-slate-900 text-slate-200 flex-col p-4">
           <div className="flex items-center gap-2 rounded-xl bg-white p-3">
-            <Logo className="h-7" />
+            <Logo className="h-8" />
           </div>
           <nav className="mt-6 flex-1 space-y-1">
             {items.map(({ to, label, icon: Icon, end }) => (
@@ -56,6 +56,8 @@ export default function AdminLayout() {
         <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-full overflow-x-auto">
           {/* Mobile top nav */}
           <div className="lg:hidden mb-4 flex items-center gap-2 overflow-x-auto">
+            <Logo className="h-6 shrink-0" />
+            <span className="h-4 w-px shrink-0 bg-slate-200" />
             {items.map(({ to, label, end }) => (
               <NavLink key={to} to={to} end={end}
                 className={({ isActive }) =>

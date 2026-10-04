@@ -1,6 +1,6 @@
 export const Logo = ({ className = "h-9" }) => (
   <img
-    src="/veritech-logo.png"
+    src="/veritech-logo.png?v=2"
     alt="Veritech.AI"
     className={`${className} w-auto object-contain select-none`}
     draggable="false"
