@@ -5,6 +5,7 @@ import io
 import logging
 import os
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional
@@ -18,31 +19,52 @@ import razorpay
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, APIRouter, HTTPException, Header, Query, UploadFile, File
 from fastapi.responses import StreamingResponse, Response
-from motor.motor_asyncio import AsyncIOMotorClient
+from supabase_store import DocumentStore
 from pydantic import BaseModel, EmailStr, Field
 from reportlab.lib.colors import HexColor
-from reportlab.lib.pagesizes import landscape, A4
+from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import inch
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas as pdf_canvas
 from starlette.middleware.cors import CORSMiddleware
 
-from email_service import send_payment_success_email
-
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
-MONGO_URL = os.environ["MONGO_URL"]
-DB_NAME = os.environ["DB_NAME"]
+from email_service import send_payment_success_email
+
 JWT_SECRET = os.environ["JWT_SECRET"]
 RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "rzp_test_REPLACE_ME")
 RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "REPLACE_ME_SECRET")
-ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "jayeshgangurde15@gmail.com")
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "jayeshgangurde15@gmail.com").strip().lower()
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "Jayesh@123")
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://veritech-intern.preview.emergentagent.com")
 
-client = AsyncIOMotorClient(MONGO_URL)
-db = client[DB_NAME]
+db = DocumentStore()
+
+# Short-lived caches for hot public reads (plans / branding). Unlimited concurrent
+# users share these without hammering the DB on every page load.
+_BRANDING_CACHE: dict = {"at": 0.0, "value": None}
+_PLANS_CACHE: dict = {"at": 0.0, "value": None}
+# Per-duration dashboard payloads: { "<duration|all>": {"at": float, "value": dict} }
+_DASHBOARD_CACHE: dict = {}
+_FAILURE_CACHE: dict = {"at": 0.0, "value": None}
+_CACHE_TTL_SEC = 45.0
+_DASHBOARD_TTL_SEC = 20.0
+
+
+def _invalidate_branding_cache() -> None:
+    _BRANDING_CACHE["at"] = 0.0
+    _BRANDING_CACHE["value"] = None
+    _PLANS_CACHE["at"] = 0.0
+    _PLANS_CACHE["value"] = None
+
+
+def _invalidate_admin_stats_cache() -> None:
+    _DASHBOARD_CACHE.clear()
+    _FAILURE_CACHE["at"] = 0.0
+    _FAILURE_CACHE["value"] = None
+
 
 # Razorpay client - initialized lazily so app can start with placeholder keys
 def get_razorpay_client() -> Optional[razorpay.Client]:
@@ -83,8 +105,8 @@ class RegistrationCreate(BaseModel):
     branch: Optional[str] = ""
     graduation_year: Optional[str] = ""
     internship_type: str
-    internship_start_date: str
-    internship_end_date: str
+    internship_start_date: Optional[str] = ""
+    internship_end_date: Optional[str] = ""
     internship_id_input: Optional[str] = ""
     certificate_type: str = "Internship Certificate"
     duration_months: int
@@ -109,6 +131,7 @@ class RegistrationUpdate(BaseModel):
 class OrderCreate(BaseModel):
     registration_id: str
     duration_months: int
+    gateway: str = "razorpay"  # "dummy" skips Razorpay for local testing
 
 
 class PaymentVerify(BaseModel):
@@ -139,6 +162,15 @@ class RefundRequest(BaseModel):
     amount: Optional[int] = None  # in rupees; if None → full refund
 
 
+class BulkDeleteRequest(BaseModel):
+    registration_ids: list[str] = Field(..., min_length=1)
+
+
+class ClearConfirmRequest(BaseModel):
+    """Require explicit confirmation text to wipe a collection."""
+    confirm: str = Field(min_length=1, max_length=32)
+
+
 class AdminLogin(BaseModel):
     email: EmailStr
     password: str
@@ -156,6 +188,31 @@ def clean(doc: Optional[dict]) -> Optional[dict]:
         return None
     doc.pop("_id", None)
     return doc
+
+
+def _as_utc(value) -> Optional[datetime]:
+    if not value or not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _shift_month(year: int, month: int, delta: int) -> tuple[int, int]:
+    index = year * 12 + (month - 1) + delta
+    return index // 12, index % 12 + 1
+
+
+def _duration_label(months: int) -> str:
+    if months == 0:
+        return "1 Day"
+    if months == 1:
+        return "1 Month"
+    return f"{months} Months"
 
 
 async def next_registration_id() -> str:
@@ -220,14 +277,21 @@ DEFAULT_PLANS = [
 
 @app.on_event("startup")
 async def startup():
+    await db.connect()
     # Seed plans
     for plan in DEFAULT_PLANS:
         existing = await db.plans.find_one({"duration_months": plan["duration_months"]})
         if not existing:
             plan_doc = {**plan, "created_at": now_iso(), "updated_at": now_iso()}
             await db.plans.insert_one(plan_doc)
-    # Seed admin
+    # Keep the configured admin account able to sign in with ADMIN_PASSWORD.
     existing_admin = await db.admin_users.find_one({"email": ADMIN_EMAIL})
+    password_ok = False
+    if existing_admin and existing_admin.get("password_hash"):
+        try:
+            password_ok = bcrypt.checkpw(ADMIN_PASSWORD.encode(), existing_admin["password_hash"].encode())
+        except ValueError:
+            password_ok = False
     if not existing_admin:
         hashed = bcrypt.hashpw(ADMIN_PASSWORD.encode(), bcrypt.gensalt()).decode()
         await db.admin_users.insert_one({
@@ -235,16 +299,28 @@ async def startup():
             "password_hash": hashed,
             "created_at": now_iso(),
         })
+    elif not password_ok:
+        hashed = bcrypt.hashpw(ADMIN_PASSWORD.encode(), bcrypt.gensalt()).decode()
+        await db.admin_users.update_one(
+            {"email": ADMIN_EMAIL},
+            {"$set": {"password_hash": hashed, "updated_at": now_iso()}},
+        )
     # Indexes
     await db.registrations.create_index("registration_id", unique=True)
     await db.registrations.create_index("email")
     await db.payments.create_index("registration_id")
+    # Warm hot caches so the first visitor is not waiting on a cold Supabase round-trip.
+    try:
+        await list_plans()
+        await _get_branding()
+    except Exception as e:
+        logger.warning("cache warm failed: %s", e)
     logger.info("Startup complete: plans and admin seeded")
 
 
 @app.on_event("shutdown")
 async def shutdown():
-    client.close()
+    await db.close()
 
 
 # ============================================================
@@ -257,16 +333,41 @@ async def root():
 
 @api.get("/plans")
 async def list_plans():
+    now = time.monotonic()
+    if _PLANS_CACHE["value"] is not None and (now - _PLANS_CACHE["at"]) < _CACHE_TTL_SEC:
+        return _PLANS_CACHE["value"]
     plans = await db.plans.find({"is_active": True}).sort("duration_months", 1).to_list(20)
-    return [clean(p) for p in plans]
+    periods = _periods_public(await _get_branding())
+    result = []
+    for plan in plans:
+        item = clean(plan)
+        slot = periods.get(str(item.get("duration_months"))) or {}
+        item["start_date"] = slot.get("start_date") or ""
+        item["end_date"] = slot.get("end_date") or ""
+        result.append(item)
+    _PLANS_CACHE["at"] = now
+    _PLANS_CACHE["value"] = result
+    return result
+
+
+@api.get("/internship-periods")
+async def internship_periods():
+    return {"periods": _periods_public(await _get_branding())}
+
+
+@api.get("/internship-domains")
+async def internship_domains():
+    return {"domains": _domains_public(await _get_branding())}
 
 
 @api.post("/registrations")
 async def create_registration(body: RegistrationCreate):
+    """Create a registration. No per-email / per-user quota — unlimited concurrent signups."""
     if not body.declaration_accepted:
         raise HTTPException(400, "Please accept the declaration")
-    if body.internship_type not in INTERNSHIP_TYPES:
-        raise HTTPException(400, "Invalid internship type")
+    offered = _domains_public(await _get_branding())
+    if body.internship_type not in offered:
+        raise HTTPException(400, "Please select an internship domain from the list")
     if body.certificate_type not in CERTIFICATE_TYPES:
         raise HTTPException(400, "Invalid certificate type")
     if body.duration_months not in DURATION_MONTHS:
@@ -323,6 +424,8 @@ async def update_registration(registration_id: str, body: RegistrationUpdate):
     if reg.get("payment_status") == "PAID":
         raise HTTPException(400, "Cannot edit a paid registration")
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    if "internship_type" in updates and updates["internship_type"] not in _domains_public(await _get_branding()):
+        raise HTTPException(400, "Please select an internship domain from the list")
     if "duration_months" in updates:
         plan = await get_plan(updates["duration_months"])
         updates["amount"] = plan["price"]
@@ -336,10 +439,14 @@ async def update_registration(registration_id: str, body: RegistrationUpdate):
 async def lookup_status(query: str = Query(min_length=3)):
     q = query.strip()
     reg = await db.registrations.find_one({
-        "$or": [{"registration_id": q.upper()}, {"email": q.lower()}]
+        "$or": [
+            {"registration_id": q.upper()},
+            {"certificate_number": q.upper()},
+            {"email": q.lower()},
+        ]
     })
     if not reg:
-        raise HTTPException(404, "No registration found for this ID or email")
+        raise HTTPException(404, "No certificate found for this registration ID, certificate ID, or email")
     return clean(reg)
 
 
@@ -348,6 +455,8 @@ async def lookup_status(query: str = Query(min_length=3)):
 # ============================================================
 @api.post("/payments/order")
 async def create_order(body: OrderCreate):
+    """Start checkout for any unpaid registration. No global user/payment caps —
+    many users can pay at the same time; only this registration's PAID state is checked."""
     reg = await db.registrations.find_one({"registration_id": body.registration_id})
     if not reg:
         raise HTTPException(404, "Registration not found")
@@ -365,8 +474,9 @@ async def create_order(body: OrderCreate):
     amount_paise = int(plan["price"]) * 100
 
     rz = get_razorpay_client()
-    if rz is None:
-        # Mock order (Razorpay keys not configured)
+    use_dummy = body.gateway == "dummy"
+    if use_dummy:
+        # Explicit test gateway — skips Razorpay checkout
         mock_order_id = f"order_mock_{body.registration_id.replace('-', '')}"
         await db.payments.update_one(
             {"registration_id": body.registration_id, "status": {"$ne": "PAID"}},
@@ -391,6 +501,12 @@ async def create_order(body: OrderCreate):
             "email": reg["email"],
             "mobile": reg["mobile"],
         }
+
+    if rz is None:
+        raise HTTPException(
+            503,
+            "Razorpay is not configured. Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET, or use Dummy payment (test).",
+        )
 
     try:
         order = rz.order.create({
@@ -508,6 +624,7 @@ async def mock_complete(body: MockPay):
         await db.registrations.update_one(
             {"registration_id": body.registration_id},
             {"$set": {"payment_status": "FAILED", "status": "PAYMENT_FAILED",
+                      "last_failure_reason": "Test payment failure",
                       "updated_at": now_iso()}},
         )
         return {"verified": False, "status": "FAILED"}
@@ -541,13 +658,42 @@ async def _mark_paid(reg_id: str, order_id: str, payment_id: str, signature: str
             "updated_at": paid_at,
         }},
     )
-    # Fire confirmation email (non-blocking)
+    _invalidate_admin_stats_cache()
     reg = await db.registrations.find_one({"registration_id": reg_id})
-    if reg:
-        try:
-            await send_payment_success_email(clean(reg))
-        except Exception as e:
-            logger.error("email dispatch failed: %s", e)
+    if not reg:
+        return
+
+    if not reg.get("certificate_number"):
+        cert_number = f"VT-CERT-{datetime.now(timezone.utc).year}-{reg_id.split('-')[-1]}"
+        issued_at = now_iso()
+        await db.registrations.update_one(
+            {"registration_id": reg_id},
+            {"$set": {
+                "certificate_status": "Generated",
+                "certificate_number": cert_number,
+                "certificate_generated_at": issued_at,
+                "updated_at": issued_at,
+            }},
+        )
+        reg["certificate_number"] = cert_number
+        reg["certificate_status"] = "Generated"
+        reg["certificate_generated_at"] = issued_at
+
+    try:
+        branding = await _get_branding()
+        start, end = _certificate_dates(reg, branding)
+        if start and end:
+            reg["internship_start_date"] = start
+            reg["internship_end_date"] = end
+        certificate_pdf = _build_certificate_pdf(reg, branding)
+        tracker_url = f"{FRONTEND_URL.rstrip('/')}/status?q={reg_id}"
+        await send_payment_success_email(
+            clean(reg),
+            certificate_pdf=certificate_pdf,
+            tracker_url=tracker_url,
+        )
+    except Exception as e:
+        logger.error("email dispatch failed: %s", e)
 
 
 @api.get("/payments/{registration_id}")
@@ -602,22 +748,187 @@ async def admin_me(email: str = Depends(require_admin)):
 
 
 @api.get("/admin/dashboard")
-async def admin_dashboard(email: str = Depends(require_admin)):
-    total = await db.registrations.count_documents({})
-    paid = await db.registrations.count_documents({"payment_status": "PAID"})
-    pending = await db.registrations.count_documents({"payment_status": "PENDING"})
-    failed = await db.registrations.count_documents({"payment_status": "FAILED"})
-    certs_generated = await db.registrations.count_documents({"certificate_status": {"$in": ["Generated", "Issued"]}})
-    revenue_docs = await db.registrations.find({"payment_status": "PAID"}, {"amount": 1}).to_list(10000)
-    revenue = sum(int(d.get("amount", 0)) for d in revenue_docs)
-    return {
-        "total_registrations": total,
+async def admin_dashboard(
+    email: str = Depends(require_admin),
+    duration: Optional[int] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+):
+    now_mono = time.monotonic()
+    cache_key = f"{'all' if duration is None else int(duration)}|{date_from or ''}|{date_to or ''}"
+    cached = _DASHBOARD_CACHE.get(cache_key)
+    if cached and cached.get("value") is not None and (now_mono - cached["at"]) < _DASHBOARD_TTL_SEC:
+        return cached["value"]
+
+    # One registrations scan is enough — today_received comes from reg.paid_at (no second payments load).
+    query = {}
+    if duration is not None:
+        query["duration_months"] = int(duration)
+    regs = await db.registrations.find(query).sort("created_at", -1).to_list(10000)
+
+    from_d = None
+    to_d = None
+    try:
+        if date_from:
+            from_d = datetime.strptime(date_from[:10], "%Y-%m-%d").date()
+        if date_to:
+            to_d = datetime.strptime(date_to[:10], "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(400, "Invalid date_from / date_to (use YYYY-MM-DD)")
+    if from_d or to_d:
+        filtered = []
+        for reg in regs:
+            created = _as_utc(reg.get("created_at"))
+            if not created:
+                continue
+            day = created.date()
+            if from_d and day < from_d:
+                continue
+            if to_d and day > to_d:
+                continue
+            filtered.append(reg)
+        regs = filtered
+
+    now = datetime.now(timezone.utc)
+    today = now.date()
+
+    paid = pending = failed = refunded = certs = 0
+    revenue = 0
+    today_received = 0
+    month_buckets = {}
+    for offset in range(5, -1, -1):
+        year, month = _shift_month(now.year, now.month, -offset)
+        month_buckets[(year, month)] = {
+            "label": datetime(year, month, 1, tzinfo=timezone.utc).strftime("%b"),
+            "revenue": 0,
+            "registrations": 0,
+        }
+    day_buckets = []
+    for offset in range(6, -1, -1):
+        day = today - timedelta(days=offset)
+        day_buckets.append({"date": day.isoformat(), "label": day.strftime("%a"), "count": 0})
+    day_index = {bucket["date"]: bucket for bucket in day_buckets}
+    duration_buckets = {
+        months: {"months": months, "label": _duration_label(months), "count": 0, "revenue": 0}
+        for months in (0, 1, 2, 3, 6)
+    }
+    internship_counts: dict[str, int] = {}
+    status_counts: dict[str, int] = {}
+    today_registrations = 0
+
+    for reg in regs:
+        status = reg.get("payment_status") or "PENDING"
+        status_counts[status] = status_counts.get(status, 0) + 1
+        amount = int(reg.get("amount") or 0)
+        if status == "PAID":
+            paid += 1
+            revenue += amount
+            paid_at = _as_utc(reg.get("paid_at"))
+            if paid_at and paid_at.date() == today:
+                today_received += amount
+        elif status == "FAILED":
+            failed += 1
+        elif status in ("REFUNDED", "PARTIALLY_REFUNDED"):
+            refunded += 1
+        else:
+            pending += 1
+        if reg.get("certificate_status") in ("Generated", "Issued"):
+            certs += 1
+        created = _as_utc(reg.get("created_at"))
+        if created:
+            key = (created.year, created.month)
+            if key in month_buckets:
+                month_buckets[key]["registrations"] += 1
+                if status == "PAID":
+                    month_buckets[key]["revenue"] += amount
+            if created.date() == today:
+                today_registrations += 1
+            day = day_index.get(created.date().isoformat())
+            if day:
+                day["count"] += 1
+        duration = reg.get("duration_months")
+        if duration in duration_buckets:
+            duration_buckets[duration]["count"] += 1
+            if status == "PAID":
+                duration_buckets[duration]["revenue"] += amount
+        internship = reg.get("internship_type") or "Other"
+        internship_counts[internship] = internship_counts.get(internship, 0) + 1
+
+    months = list(month_buckets.values())
+    current_revenue = months[-1]["revenue"] if months else 0
+    previous_revenue = months[-2]["revenue"] if len(months) > 1 else 0
+    if previous_revenue:
+        revenue_change_pct = round((current_revenue - previous_revenue) / previous_revenue * 100)
+    elif current_revenue:
+        revenue_change_pct = 100
+    else:
+        revenue_change_pct = 0
+
+    internships = [
+        {"label": label, "count": count}
+        for label, count in sorted(internship_counts.items(), key=lambda item: item[1], reverse=True)[:5]
+    ]
+    status_labels = {
+        "PAID": "Paid",
+        "PENDING": "Pending",
+        "FAILED": "Failed",
+        "REFUNDED": "Refunded",
+        "PARTIALLY_REFUNDED": "Partial refund",
+    }
+    statuses = [
+        {"key": key, "label": status_labels.get(key, key.title()), "count": count}
+        for key, count in sorted(status_counts.items(), key=lambda item: item[1], reverse=True)
+        if count
+    ]
+    # Already sorted by created_at DESC from the query
+    recent = regs[:6]
+    periods = _periods_public(await _get_branding())
+    durations = []
+    for duration_months, bucket in duration_buckets.items():
+        slot = periods.get(str(duration_months)) or {}
+        durations.append({
+            **bucket,
+            "start_date": slot.get("start_date") or "",
+            "end_date": slot.get("end_date") or "",
+        })
+    payload = {
+        "total_registrations": len(regs),
         "paid": paid,
         "pending": pending,
         "failed": failed,
+        "refunded": refunded,
         "revenue": revenue,
-        "certificates_generated": certs_generated,
+        "certificates_generated": certs,
+        "today_received": today_received,
+        "today_registrations": today_registrations,
+        "week_total": sum(bucket["count"] for bucket in day_buckets),
+        "revenue_change_pct": revenue_change_pct,
+        "months": months,
+        "days": [{"label": bucket["label"], "count": bucket["count"]} for bucket in day_buckets],
+        "durations": durations,
+        "internships": internships,
+        "statuses": statuses,
+        "recent": [
+            {
+                "registration_id": reg.get("registration_id"),
+                "full_name": reg.get("full_name"),
+                "payment_status": reg.get("payment_status"),
+                "amount": int(reg.get("amount") or 0),
+                "duration_months": reg.get("duration_months"),
+                "internship_start_date": reg.get("internship_start_date") or (periods.get(str(reg.get("duration_months"))) or {}).get("start_date") or "",
+                "internship_end_date": reg.get("internship_end_date") or (periods.get(str(reg.get("duration_months"))) or {}).get("end_date") or "",
+                "internship_type": reg.get("internship_type"),
+                "created_at": reg.get("created_at"),
+            }
+            for reg in recent
+        ],
+        "generated_at": now.isoformat(),
+        "duration_filter": duration,
+        "date_from": date_from,
+        "date_to": date_to,
     }
+    _DASHBOARD_CACHE[cache_key] = {"at": now_mono, "value": payload}
+    return payload
 
 
 @api.get("/admin/registrations")
@@ -639,7 +950,7 @@ async def admin_registrations(
         ]
     if payment_status:
         q["payment_status"] = payment_status
-    if duration:
+    if duration is not None:
         q["duration_months"] = int(duration)
     if internship_type:
         q["internship_type"] = internship_type
@@ -647,30 +958,136 @@ async def admin_registrations(
     return [clean(d) for d in docs]
 
 
+async def _cascade_delete_registrations(registration_ids: list[str]) -> dict:
+    """Permanently remove registrations and related payments / audit rows from DB."""
+    ids = [str(i).strip() for i in registration_ids if str(i).strip()]
+    if not ids:
+        return {"registrations": 0, "payments": 0, "audit_logs": 0}
+    regs = await db.registrations.delete_many_by_field("registration_id", ids)
+    pays = await db.payments.delete_many_by_field("registration_id", ids)
+    audits = await db.audit_logs.delete_many_by_field("registration_id", ids)
+    _invalidate_admin_stats_cache()
+    return {"registrations": regs, "payments": pays, "audit_logs": audits}
+
+
+@api.post("/admin/registrations/bulk-delete")
+async def admin_bulk_delete_registrations(
+    body: BulkDeleteRequest,
+    email: str = Depends(require_admin),
+):
+    deleted = await _cascade_delete_registrations(body.registration_ids)
+    logger.info("Admin %s bulk-deleted registrations: %s", email, deleted)
+    return {"ok": True, "deleted": deleted}
+
+
+@api.post("/admin/registrations/clear")
+async def admin_clear_registrations(
+    body: ClearConfirmRequest,
+    email: str = Depends(require_admin),
+):
+    if body.confirm.strip().upper() != "DELETE":
+        raise HTTPException(400, 'Type DELETE to confirm clearing all registrations')
+    regs = await db.registrations.delete_all()
+    pays = await db.payments.delete_all()
+    audits = await db.audit_logs.delete_all()
+    _invalidate_admin_stats_cache()
+    logger.info("Admin %s cleared all registrations/payments/audit_logs", email)
+    return {
+        "ok": True,
+        "deleted": {"registrations": regs, "payments": pays, "audit_logs": audits},
+    }
+
+
+@api.post("/admin/payments/bulk-delete")
+async def admin_bulk_delete_payments(
+    body: BulkDeleteRequest,
+    email: str = Depends(require_admin),
+):
+    ids = [str(i).strip() for i in body.registration_ids if str(i).strip()]
+    if not ids:
+        raise HTTPException(400, "No payment registration IDs provided")
+    pays = await db.payments.delete_many_by_field("registration_id", ids)
+    audits = await db.audit_logs.delete_many_by_field("registration_id", ids)
+    _invalidate_admin_stats_cache()
+    logger.info("Admin %s bulk-deleted payments: %s", email, pays)
+    return {"ok": True, "deleted": {"payments": pays, "audit_logs": audits}}
+
+
+@api.post("/admin/payments/clear")
+async def admin_clear_payments(
+    body: ClearConfirmRequest,
+    email: str = Depends(require_admin),
+):
+    if body.confirm.strip().upper() != "DELETE":
+        raise HTTPException(400, "Type DELETE to confirm clearing all payments")
+    pays = await db.payments.delete_all()
+    audits = await db.audit_logs.delete_all()
+    _invalidate_admin_stats_cache()
+    logger.info("Admin %s cleared all payments/audit_logs", email)
+    return {"ok": True, "deleted": {"payments": pays, "audit_logs": audits}}
+
+
+@api.post("/admin/certificates/bulk-delete")
+async def admin_bulk_delete_certificates(
+    body: BulkDeleteRequest,
+    email: str = Depends(require_admin),
+):
+    """Certificates live on registration docs — cascade-delete those records."""
+    deleted = await _cascade_delete_registrations(body.registration_ids)
+    logger.info("Admin %s bulk-deleted certificate registrations: %s", email, deleted)
+    return {"ok": True, "deleted": deleted}
+
+
+@api.post("/admin/certificates/clear")
+async def admin_clear_certificates(
+    body: ClearConfirmRequest,
+    email: str = Depends(require_admin),
+):
+    """Remove all paid registrations (certificate list source) and related payments."""
+    if body.confirm.strip().upper() != "DELETE":
+        raise HTTPException(400, "Type DELETE to confirm clearing all certificates")
+    paid = await db.registrations.find({"payment_status": "PAID"}).to_list(100000)
+    ids = [r.get("registration_id") for r in paid if r.get("registration_id")]
+    deleted = await _cascade_delete_registrations(ids)
+    logger.info("Admin %s cleared paid certificate registrations: %s", email, deleted)
+    return {"ok": True, "deleted": deleted}
+
+
 @api.get("/admin/failure-analytics")
 async def admin_failure_analytics(email: str = Depends(require_admin)):
     """Breakdown of failed payments by Razorpay-reported reason/code."""
-    total_failed = await db.payments.count_documents({"status": "FAILED"})
+    now_mono = time.monotonic()
+    if _FAILURE_CACHE["value"] is not None and (now_mono - _FAILURE_CACHE["at"]) < _DASHBOARD_TTL_SEC:
+        return _FAILURE_CACHE["value"]
 
-    async def _agg(field: str, label_default: str):
-        pipeline = [
-            {"$match": {"status": "FAILED"}},
-            {"$group": {"_id": {"$ifNull": [f"${field}", label_default]}, "count": {"$sum": 1}}},
-            {"$sort": {"count": -1}},
-            {"$limit": 10},
+    # Single scan — previous version ran 4 full payment-collection reads.
+    failed = await db.payments.find({"status": "FAILED"}).to_list(5000)
+    desc_counts: dict[str, int] = {}
+    code_counts: dict[str, int] = {}
+    step_counts: dict[str, int] = {}
+    for payment in failed:
+        desc = payment.get("failure_description") or "Unknown reason"
+        code = payment.get("failure_code") or "UNKNOWN"
+        step = payment.get("failure_step") or "unknown"
+        desc_counts[desc] = desc_counts.get(desc, 0) + 1
+        code_counts[code] = code_counts.get(code, 0) + 1
+        step_counts[step] = step_counts.get(step, 0) + 1
+
+    def _top(counts: dict[str, int]):
+        return [
+            {"label": label, "count": count}
+            for label, count in sorted(counts.items(), key=lambda item: item[1], reverse=True)[:10]
         ]
-        rows = await db.payments.aggregate(pipeline).to_list(20)
-        return [{"label": r["_id"], "count": r["count"]} for r in rows]
 
-    by_description = await _agg("failure_description", "Unknown reason")
-    by_code = await _agg("failure_code", "UNKNOWN")
-    by_step = await _agg("failure_step", "unknown")
-    return {
-        "total_failed": total_failed,
-        "by_description": by_description,
-        "by_code": by_code,
-        "by_step": by_step,
+    payload = {
+        "total_failed": len(failed),
+        "by_description": _top(desc_counts),
+        "by_code": _top(code_counts),
+        "by_step": _top(step_counts),
     }
+    _FAILURE_CACHE["at"] = now_mono
+    _FAILURE_CACHE["value"] = payload
+    return payload
 
 
 @api.post("/admin/payments/{registration_id}/refund")
@@ -742,6 +1159,7 @@ async def admin_refund_payment(
             "updated_at": now,
         }},
     )
+    _invalidate_admin_stats_cache()
     # Audit log
     await db.audit_logs.insert_one({
         "kind": "refund",
@@ -769,13 +1187,20 @@ async def admin_audit_logs(email: str = Depends(require_admin), kind: Optional[s
     return [clean(d) for d in docs]
 
 
+async def _registration_lookup() -> dict:
+    """One bulk read — avoids N+1 find_one calls on payment list screens."""
+    regs = await db.registrations.find({}).to_list(10000)
+    return {r.get("registration_id"): r for r in regs if r.get("registration_id")}
+
+
 @api.get("/admin/payments")
 async def admin_payments(email: str = Depends(require_admin)):
     docs = await db.payments.find({}).sort("created_at", -1).to_list(500)
+    regs_by_id = await _registration_lookup()
     result = []
     for d in docs:
         d = clean(d)
-        reg = await db.registrations.find_one({"registration_id": d["registration_id"]})
+        reg = regs_by_id.get(d.get("registration_id"))
         if reg:
             d["full_name"] = reg.get("full_name")
             d["email"] = reg.get("email")
@@ -818,6 +1243,7 @@ async def admin_registrations_export(email: str = Depends(require_admin)):
 @api.get("/admin/payments/export")
 async def admin_payments_export(email: str = Depends(require_admin)):
     docs = await db.payments.find({}).sort("created_at", -1).to_list(10000)
+    regs_by_id = await _registration_lookup()
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow([
@@ -826,10 +1252,10 @@ async def admin_payments_export(email: str = Depends(require_admin)):
         "Created At", "Paid At",
     ])
     for d in docs:
-        reg = await db.registrations.find_one({"registration_id": d.get("registration_id","")})
+        reg = regs_by_id.get(d.get("registration_id") or "") or {}
         w.writerow([
             d.get("razorpay_order_id",""), d.get("registration_id",""),
-            (reg or {}).get("full_name",""), (reg or {}).get("email",""),
+            reg.get("full_name",""), reg.get("email",""),
             d.get("razorpay_payment_id",""), d.get("amount",""),
             d.get("currency","INR"), d.get("status",""), d.get("mode",""),
             d.get("created_at",""), d.get("paid_at",""),
@@ -911,15 +1337,174 @@ async def preview_certificate(registration_id: str, email: str = Depends(require
 
 
 # ============================================================
-# Branding (signature + seal) — admin only
+# Branding (logo, signature, seal, internship dates) — admin only
 # ============================================================
 ALLOWED_IMG_MIME = {"image/png", "image/jpeg", "image/jpg", "image/webp"}
 MAX_IMG_BYTES = 2 * 1024 * 1024  # 2 MB
+BRAND_IMAGES = ("logo", "signature", "seal")
+PERIOD_MONTHS = ("1", "2", "3", "6")
+
+
+class PeriodSlot(BaseModel):
+    start_date: str = ""
+    end_date: str = ""
+
+
+class PeriodsUpdate(BaseModel):
+    periods: dict[str, PeriodSlot] = {}
+
+
+class DomainSlot(BaseModel):
+    name: str
+    active: bool = True
+
+
+class DomainsUpdate(BaseModel):
+    domains: list[DomainSlot] = []
+
+
+def _empty_periods() -> dict:
+    return {key: {"start_date": "", "end_date": ""} for key in PERIOD_MONTHS}
+
+
+def _domains_all(branding: Optional[dict]) -> list[dict]:
+    raw = (branding or {}).get("domains")
+    if not isinstance(raw, list) or not raw:
+        return [{"name": name, "active": True} for name in INTERNSHIP_TYPES]
+    items = []
+    seen = set()
+    for item in raw:
+        if isinstance(item, str):
+            name, active = item, True
+        elif isinstance(item, dict):
+            name, active = item.get("name"), bool(item.get("active", True))
+        else:
+            continue
+        name = " ".join(str(name or "").split())
+        key = name.casefold()
+        if not name or key in seen:
+            continue
+        seen.add(key)
+        items.append({"name": name, "active": active})
+    return items or [{"name": name, "active": True} for name in INTERNSHIP_TYPES]
+
+
+def _domains_public(branding: Optional[dict]) -> list[str]:
+    return [item["name"] for item in _domains_all(branding) if item["active"]]
+
+
+def _clean_domains(domains: list[DomainSlot]) -> list[dict]:
+    cleaned = []
+    seen = set()
+    for slot in domains:
+        name = " ".join((slot.name or "").split())
+        key = name.casefold()
+        if not name:
+            continue
+        if len(name) > 80:
+            raise HTTPException(400, "Each domain name must be 80 characters or fewer")
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append({"name": name, "active": bool(slot.active)})
+    if not cleaned:
+        raise HTTPException(400, "Add at least one internship domain")
+    if len(cleaned) > 40:
+        raise HTTPException(400, "You can offer up to 40 domains")
+    active = [item for item in cleaned if item["active"]]
+    if not active:
+        raise HTTPException(400, "Select at least one domain for the registration form")
+    return cleaned
+
+
+def _periods_public(branding: Optional[dict]) -> dict:
+    stored = (branding or {}).get("periods") or {}
+    public = _empty_periods()
+    for key in PERIOD_MONTHS:
+        slot = stored.get(key) or {}
+        public[key] = {
+            "start_date": str(slot.get("start_date") or ""),
+            "end_date": str(slot.get("end_date") or ""),
+        }
+    return public
+
+
+def _parse_period_date(value: str) -> Optional[datetime]:
+    try:
+        return datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+def _format_cert_date(value: str) -> str:
+    parsed = _parse_period_date((value or "").strip())
+    if not parsed:
+        return (value or "").strip()
+    return parsed.strftime("%d %B %Y")
+
+
+def _duration_with_dates(reg: dict, branding: Optional[dict] = None) -> str:
+    try:
+        n = int(reg.get("duration_months"))
+    except (TypeError, ValueError):
+        n = None
+    if n == 0:
+        label = "1 Day"
+    elif n == 1:
+        label = "1 Month"
+    elif n:
+        label = f"{n} Months"
+    else:
+        label = ""
+    start, end = _certificate_dates(reg, branding)
+    start_label = _format_cert_date(start) if start else ""
+    end_label = _format_cert_date(end) if end else ""
+    if start_label and end_label:
+        return f"{label} ({start_label} - {end_label})".strip()
+    return label
+
+
+def _certificate_dates(reg: dict, branding: Optional[dict]) -> tuple[str, str]:
+    months = str(reg.get("duration_months") if reg.get("duration_months") is not None else "")
+    slot = _periods_public(branding).get(months) or {}
+    start = (slot.get("start_date") or "").strip()
+    end = (slot.get("end_date") or "").strip()
+    if start and end:
+        return start, end
+    return (
+        str(reg.get("internship_start_date") or "").strip(),
+        str(reg.get("internship_end_date") or "").strip(),
+    )
+
+
+async def _sync_period_dates(periods: dict) -> None:
+    docs = await db.registrations.find({}).to_list(10000)
+    for reg in docs:
+        key = str(reg.get("duration_months") if reg.get("duration_months") is not None else "")
+        slot = periods.get(key) or {}
+        start = (slot.get("start_date") or "").strip()
+        end = (slot.get("end_date") or "").strip()
+        if not start or not end:
+            continue
+        await db.registrations.update_one(
+            {"registration_id": reg.get("registration_id")},
+            {"$set": {
+                "internship_start_date": start,
+                "internship_end_date": end,
+                "updated_at": now_iso(),
+            }},
+        )
 
 
 async def _get_branding() -> dict:
+    now = time.monotonic()
+    if _BRANDING_CACHE["value"] is not None and (now - _BRANDING_CACHE["at"]) < _CACHE_TTL_SEC:
+        return _BRANDING_CACHE["value"]
     doc = await db.settings.find_one({"_id": "branding"})
-    return clean(doc) if doc else {}
+    value = clean(doc) if doc else {}
+    _BRANDING_CACHE["at"] = now
+    _BRANDING_CACHE["value"] = value
+    return value
 
 
 async def _save_branding_field(field: str, b64: Optional[str], mime: Optional[str]):
@@ -932,6 +1517,7 @@ async def _save_branding_field(field: str, b64: Optional[str], mime: Optional[st
         }},
         upsert=True,
     )
+    _invalidate_branding_cache()
 
 
 async def _upload_image(field: str, file: UploadFile) -> dict:
@@ -951,6 +1537,11 @@ async def _upload_image(field: str, file: UploadFile) -> dict:
 async def admin_get_branding(email: str = Depends(require_admin)):
     b = await _get_branding()
     return {
+        "logo": {
+            "present": bool(b.get("logo_b64")),
+            "mime": b.get("logo_mime"),
+            "updated_at": b.get("logo_updated_at"),
+        },
         "signature": {
             "present": bool(b.get("signature_b64")),
             "mime": b.get("signature_mime"),
@@ -961,12 +1552,14 @@ async def admin_get_branding(email: str = Depends(require_admin)):
             "mime": b.get("seal_mime"),
             "updated_at": b.get("seal_updated_at"),
         },
+        "periods": _periods_public(b),
+        "domains": _domains_all(b),
     }
 
 
 @api.get("/admin/branding/{kind}/image")
 async def admin_get_branding_image(kind: str, email: str = Depends(require_admin)):
-    if kind not in ("signature", "seal"):
+    if kind not in BRAND_IMAGES:
         raise HTTPException(404, "Not found")
     b = await _get_branding()
     b64 = b.get(f"{kind}_b64")
@@ -974,6 +1567,11 @@ async def admin_get_branding_image(kind: str, email: str = Depends(require_admin
     if not b64:
         raise HTTPException(404, f"No {kind} uploaded")
     return Response(content=base64.b64decode(b64), media_type=mime)
+
+
+@api.post("/admin/branding/logo")
+async def admin_upload_logo(file: UploadFile = File(...), email: str = Depends(require_admin)):
+    return await _upload_image("logo", file)
 
 
 @api.post("/admin/branding/signature")
@@ -988,125 +1586,255 @@ async def admin_upload_seal(file: UploadFile = File(...), email: str = Depends(r
 
 @api.delete("/admin/branding/{kind}")
 async def admin_delete_branding(kind: str, email: str = Depends(require_admin)):
-    if kind not in ("signature", "seal"):
+    if kind not in BRAND_IMAGES:
         raise HTTPException(404, "Not found")
     await _save_branding_field(kind, None, None)
     return {"ok": True}
 
 
-@api.get("/receipts/{registration_id}/download")
-async def download_receipt(registration_id: str):
-    reg = await db.registrations.find_one({"registration_id": registration_id})
-    if not reg:
-        raise HTTPException(404, "Registration not found")
-    if reg.get("payment_status") != "PAID":
-        raise HTTPException(400, "Receipt available only after payment")
-    pdf_bytes = _build_receipt_pdf(reg)
-    return StreamingResponse(
-        io.BytesIO(pdf_bytes),
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{registration_id}-receipt.pdf"'},
+@api.put("/admin/branding/periods")
+async def admin_update_periods(body: PeriodsUpdate, email: str = Depends(require_admin)):
+    cleaned = _empty_periods()
+    for key in PERIOD_MONTHS:
+        slot = body.periods.get(key) or PeriodSlot()
+        start = slot.start_date.strip()
+        end = slot.end_date.strip()
+        if not start and not end:
+            continue
+        if not start or not end:
+            raise HTTPException(400, f"The {key}-month internship needs both a start date and an end date")
+        start_dt = _parse_period_date(start)
+        end_dt = _parse_period_date(end)
+        if not start_dt or not end_dt:
+            raise HTTPException(400, "Enter dates as YYYY-MM-DD")
+        if end_dt < start_dt:
+            raise HTTPException(400, f"The {key}-month end date must be on or after the start date")
+        cleaned[key] = {
+            "start_date": start_dt.strftime("%Y-%m-%d"),
+            "end_date": end_dt.strftime("%Y-%m-%d"),
+        }
+    await db.settings.update_one(
+        {"_id": "branding"},
+        {"$set": {"periods": cleaned, "periods_updated_at": now_iso()}},
+        upsert=True,
     )
+    _invalidate_branding_cache()
+    await _sync_period_dates(cleaned)
+    return {"ok": True, "periods": cleaned}
+
+
+@api.put("/admin/branding/domains")
+async def admin_update_domains(body: DomainsUpdate, email: str = Depends(require_admin)):
+    cleaned = _clean_domains(body.domains)
+    await db.settings.update_one(
+        {"_id": "branding"},
+        {"$set": {"domains": cleaned, "domains_updated_at": now_iso()}},
+        upsert=True,
+    )
+    _invalidate_branding_cache()
+    return {"ok": True, "domains": cleaned}
 
 
 # ============================================================
 # PDF generation
 # ============================================================
+def _draw_rich_text(c, x, y, parts, size, max_width, leading, color):
+    """Draw wrapped text. parts is a list of (text, bold)."""
+    words = []
+    for text, bold in parts:
+        font = "Helvetica-Bold" if bold else "Helvetica"
+        for word in str(text or "").split():
+            words.append((word, font))
+    lines = []
+    line = []
+    width = 0
+    space = c.stringWidth(" ", "Helvetica", size)
+    for word, font in words:
+        word_width = c.stringWidth(word, font, size)
+        extra = space if line else 0
+        if line and width + extra + word_width > max_width:
+            lines.append(line)
+            line = [(word, font)]
+            width = word_width
+        else:
+            line.append((word, font))
+            width += extra + word_width
+    if line:
+        lines.append(line)
+    for row in lines:
+        cursor = x
+        for index, (word, font) in enumerate(row):
+            if index and not word[:1] in ",.;:)":
+                cursor += space
+            c.setFillColor(color)
+            c.setFont(font, size)
+            c.drawString(cursor, y, word)
+            cursor += c.stringWidth(word, font, size)
+        y -= leading
+    return y
+
+
+def _draw_veritech_mark(c, x, y, size, align, black, blue):
+    """Draw Veritech in black and .AI in blue."""
+    name = "Veritech"
+    suffix = ".AI"
+    font = "Helvetica-Bold"
+    name_w = c.stringWidth(name, font, size)
+    total = name_w + c.stringWidth(suffix, font, size)
+    if align == "right":
+        start = x - total
+    elif align == "center":
+        start = x - total / 2
+    else:
+        start = x
+    c.setFont(font, size)
+    c.setFillColor(black)
+    c.drawString(start, y, name)
+    c.setFillColor(blue)
+    c.drawString(start + name_w, y, suffix)
+
+
 def _build_certificate_pdf(reg: dict, branding: Optional[dict] = None) -> bytes:
     buf = io.BytesIO()
-    c = pdf_canvas.Canvas(buf, pagesize=landscape(A4))
-    w, h = landscape(A4)
-    navy = HexColor("#0F172A")
+    c = pdf_canvas.Canvas(buf, pagesize=A4)
+    w, h = A4
+    black = HexColor("#111111")
     blue = HexColor("#2563EB")
-    muted = HexColor("#64748B")
+    muted = HexColor("#334155")
 
-    # Border frame
-    c.setStrokeColor(navy)
-    c.setLineWidth(3)
-    c.rect(0.4 * inch, 0.4 * inch, w - 0.8 * inch, h - 0.8 * inch)
-    c.setStrokeColor(blue)
-    c.setLineWidth(1)
-    c.rect(0.55 * inch, 0.55 * inch, w - 1.1 * inch, h - 1.1 * inch)
+    margin = 0.55 * inch
+    c.setStrokeColor(black)
+    c.setLineWidth(1.4)
+    c.rect(margin, margin, w - 2 * margin, h - 2 * margin)
 
-    # Header brand
-    c.setFillColor(navy)
-    c.setFont("Helvetica-Bold", 28)
-    c.drawCentredString(w / 2, h - 1.2 * inch, "Veritech.AI")
-    c.setFillColor(blue)
-    c.setFont("Helvetica-Bold", 12)
-    c.drawCentredString(w / 2, h - 1.5 * inch, "AI • SOFTWARE • TECHNOLOGY")
+    left = margin + 0.45 * inch
+    right = w - margin - 0.45 * inch
+    text_width = right - left
+
+    if branding and branding.get("logo_b64"):
+        try:
+            logo_bytes = base64.b64decode(branding["logo_b64"])
+            c.drawImage(
+                ImageReader(io.BytesIO(logo_bytes)),
+                left, h - 1.45 * inch,
+                width=2.05 * inch, height=0.62 * inch,
+                mask="auto", preserveAspectRatio=True, anchor="sw",
+            )
+        except Exception as e:
+            logger.error("logo draw failed: %s", e)
+
+    # Wordmark, top right: Veritech in black, .AI in blue
+    _draw_veritech_mark(c, right, h - 1.05 * inch, 18, "right", black, blue)
+    c.setFillColor(muted)
+    c.setFont("Helvetica", 8)
+    c.drawRightString(right, h - 1.22 * inch, "Software IT services")
 
     # Title
-    c.setFillColor(navy)
-    c.setFont("Helvetica-Bold", 34)
-    c.drawCentredString(w / 2, h - 2.4 * inch, "Certificate of Internship")
+    title = "CERTIFICATE FOR INTERNSHIP"
+    c.setFillColor(black)
+    c.setFont("Helvetica-Bold", 16)
+    title_w = c.stringWidth(title, "Helvetica-Bold", 16)
+    title_x = (w - title_w) / 2
+    title_y = h - 2.15 * inch
+    c.drawString(title_x, title_y, title)
+    c.setLineWidth(0.8)
+    c.line(title_x, title_y - 3, title_x + title_w, title_y - 3)
 
-    # Body
+    y = title_y - 0.45 * inch
+
+    name = (reg.get("full_name") or "the intern").strip()
+    internship_type = (reg.get("internship_type") or "Software Engineer").strip()
+    # Avoid "… Development Internship Internship" if admin stored a label that already ends with it
+    if internship_type.lower().endswith(" internship"):
+        internship_label = internship_type
+    else:
+        internship_label = f"{internship_type} Internship"
+    start, end = _certificate_dates(reg, branding)
+    start_label = _format_cert_date(start) if start else ""
+    end_label = _format_cert_date(end) if end else ""
+
+    intro = [
+        ("This is to certify that", False),
+        (name, True),
+        ("has successfully completed the", False),
+        (internship_label, True),
+        ("organized and conducted by Veritech.AI Software IT Services", False),
+    ]
+    if start_label and end_label:
+        intro += [("from", False), (start_label, True), ("to", False), (f"{end_label}.", True)]
+    else:
+        last_text, last_bold = intro[-1]
+        intro[-1] = (f"{last_text}.", last_bold)
+    paragraphs = [
+        intro,
+        [("During the internship, the intern worked on software development projects involving the design, development, testing, and implementation of software applications. The intern gained practical experience in programming, application development, debugging, and problem-solving while applying industry-standard software engineering practices.", False)],
+        [
+            ("Throughout the internship,", False),
+            (name, True),
+            ("demonstrated dedication, a willingness to learn, and a proactive approach to assigned tasks. The intern successfully completed the assigned responsibilities and contributed to the project objectives.", False),
+        ],
+        [("We appreciate the intern's efforts and wish them continued success in their professional career.", False)],
+    ]
+    y = _draw_rich_text(c, left, y, paragraphs[0], 11, text_width, 15, black)
+    for parts in paragraphs[1:]:
+        y = _draw_rich_text(c, left, y - 0.22 * inch, parts, 11, text_width, 15, black)
+
+    issued = reg.get("paid_at") or reg.get("certificate_generated_at") or datetime.now(timezone.utc).isoformat()
+    try:
+        issued_dt = datetime.fromisoformat(str(issued).replace("Z", "+00:00"))
+        issued_label = issued_dt.strftime("%d %B %Y").upper()
+    except ValueError:
+        issued_label = datetime.now(timezone.utc).strftime("%d %B %Y").upper()
+
+    y -= 0.45 * inch
+    c.setFillColor(black)
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(left, y, f"ISSUED DATE:  -  {issued_label}")
+    c.setFont("Helvetica", 9)
     c.setFillColor(muted)
-    c.setFont("Helvetica", 14)
-    c.drawCentredString(w / 2, h - 3.0 * inch, "This is to certify that")
+    meta = f"Registration ID: {reg.get('registration_id', '')}"
+    if reg.get("certificate_number"):
+        meta = f"Certificate No: {reg['certificate_number']}    {meta}"
+    c.drawString(left, y - 16, meta)
 
-    c.setFillColor(navy)
-    c.setFont("Helvetica-Bold", 26)
-    c.drawCentredString(w / 2, h - 3.6 * inch, reg["full_name"])
-
-    c.setFillColor(muted)
-    c.setFont("Helvetica", 13)
-    duration_text = ("has successfully completed a 1-day internship program in"
-                     if reg["duration_months"] == 0
-                     else f"has successfully completed a {reg['duration_months']}-month internship program in")
-    c.drawCentredString(w / 2, h - 4.2 * inch, duration_text)
-
-    c.setFillColor(blue)
-    c.setFont("Helvetica-Bold", 18)
-    c.drawCentredString(w / 2, h - 4.7 * inch, reg["internship_type"])
-
-    c.setFillColor(muted)
-    c.setFont("Helvetica", 12)
-    c.drawCentredString(
-        w / 2, h - 5.2 * inch,
-        f"From {reg['internship_start_date']} to {reg['internship_end_date']}",
-    )
-
-    # Footer meta
-    c.setFillColor(navy)
-    c.setFont("Helvetica-Bold", 10)
-    c.drawString(1.0 * inch, 0.9 * inch, f"Certificate No: {reg.get('certificate_number', '')}")
-    c.drawString(1.0 * inch, 0.72 * inch, f"Registration ID: {reg['registration_id']}")
-
-    # Signature image (bottom right) - falls back to text line
-    sig_y = 1.35 * inch
+    sign_top = 2.55 * inch
     if branding and branding.get("signature_b64"):
         try:
             sig_bytes = base64.b64decode(branding["signature_b64"])
-            c.drawImage(ImageReader(io.BytesIO(sig_bytes)), w - 3.4 * inch, sig_y,
-                        width=1.6 * inch, height=0.7 * inch,
-                        mask="auto", preserveAspectRatio=True)
+            c.drawImage(
+                ImageReader(io.BytesIO(sig_bytes)),
+                left, sign_top,
+                width=1.7 * inch, height=0.65 * inch,
+                mask="auto", preserveAspectRatio=True, anchor="sw",
+            )
         except Exception as e:
             logger.error("signature draw failed: %s", e)
-    # Signature line + label always drawn
-    c.setStrokeColor(muted)
-    c.setLineWidth(0.7)
-    c.line(w - 3.4 * inch, sig_y - 0.05 * inch, w - 1.0 * inch, sig_y - 0.05 * inch)
-    c.setFillColor(navy)
-    c.setFont("Helvetica-Bold", 10)
-    c.drawRightString(w - 1.0 * inch, 0.9 * inch, "Veritech.AI Authorized Signatory")
-    c.setFont("Helvetica", 9)
-    c.setFillColor(muted)
-    c.drawRightString(w - 1.0 * inch, 0.72 * inch, f"Issued on {datetime.now(timezone.utc).strftime('%d %B %Y')}")
+    c.setFillColor(black)
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(left, 2.25 * inch, "AUTHORIZED SIGNATORY")
+    c.setFont("Helvetica", 11)
+    c.drawString(left, 2.05 * inch, "(Program Director)")
 
-    # Seal image (bottom-center-left, near signature line)
     if branding and branding.get("seal_b64"):
         try:
             seal_bytes = base64.b64decode(branding["seal_b64"])
-            c.drawImage(ImageReader(io.BytesIO(seal_bytes)),
-                        w / 2 - 0.55 * inch, 1.05 * inch,
-                        width=1.1 * inch, height=1.1 * inch,
-                        mask="auto", preserveAspectRatio=True)
+            c.drawImage(
+                ImageReader(io.BytesIO(seal_bytes)),
+                right - 1.15 * inch, 2.05 * inch,
+                width=1.05 * inch, height=1.05 * inch,
+                mask="auto", preserveAspectRatio=True, anchor="sw",
+            )
         except Exception as e:
             logger.error("seal draw failed: %s", e)
 
-    # QR code linking to public verification page
+    # Footer: email + website only, stacked vertically
+    c.setFillColor(black)
+    c.setFont("Helvetica", 9)
+    c.drawCentredString(w / 2, 1.12 * inch, "Email: info@veritech-ai.com")
+    c.setFillColor(blue)
+    c.setFont("Helvetica-Bold", 10)
+    c.drawCentredString(w / 2, 0.92 * inch, "www.veritech-ai.com")
+
     if reg.get("certificate_number"):
         try:
             verify_url = f"{FRONTEND_URL}/verify/{reg['certificate_number']}"
@@ -1114,11 +1842,9 @@ def _build_certificate_pdf(reg: dict, branding: Optional[dict] = None) -> bytes:
             qr_buf = io.BytesIO()
             qr_img.save(qr_buf, format="PNG")
             qr_buf.seek(0)
-            c.drawImage(ImageReader(qr_buf), w - 2.0 * inch, 1.15 * inch,
-                        width=1.1 * inch, height=1.1 * inch, mask="auto")
-            c.setFont("Helvetica", 7)
-            c.setFillColor(muted)
-            c.drawRightString(w - 0.9 * inch, 1.05 * inch, "Scan to verify authenticity")
+            qr_size = 0.72 * inch
+            c.drawImage(ImageReader(qr_buf), right - qr_size, margin + 0.18 * inch,
+                        width=qr_size, height=qr_size, mask="auto")
         except Exception as e:
             logger.error("QR generation failed: %s", e)
 
@@ -1127,80 +1853,27 @@ def _build_certificate_pdf(reg: dict, branding: Optional[dict] = None) -> bytes:
     return buf.getvalue()
 
 
-def _build_receipt_pdf(reg: dict) -> bytes:
-    buf = io.BytesIO()
-    c = pdf_canvas.Canvas(buf, pagesize=A4)
-    w, h = A4
-    navy = HexColor("#0F172A")
-    blue = HexColor("#2563EB")
-    muted = HexColor("#64748B")
-    green = HexColor("#16A34A")
-
-    y = h - 1 * inch
-    c.setFillColor(navy)
-    c.setFont("Helvetica-Bold", 22)
-    c.drawString(1 * inch, y, "Veritech.AI")
-    c.setFillColor(blue)
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(1 * inch, y - 0.25 * inch, "Payment Receipt")
-
-    c.setFillColor(green)
-    c.setFont("Helvetica-Bold", 11)
-    c.drawRightString(w - 1 * inch, y, "PAID")
-
-    y -= 1 * inch
-    c.setStrokeColor(HexColor("#E2E8F0"))
-    c.line(1 * inch, y, w - 1 * inch, y)
-
-    rows = [
-        ("Registration ID", reg["registration_id"]),
-        ("Name", reg["full_name"]),
-        ("Email", reg["email"]),
-        ("Mobile", reg["mobile"]),
-        ("Certificate", reg.get("certificate_type", "Internship Certificate")),
-        ("Duration", "1 Day" if reg['duration_months'] == 0 else f"{reg['duration_months']} Month(s)"),
-        ("Payment ID", reg.get("razorpay_payment_id", "")),
-        ("Order ID", reg.get("razorpay_order_id", "")),
-        ("Payment Date", reg.get("paid_at", "")[:10]),
-    ]
-    y -= 0.35 * inch
-    for label, value in rows:
-        c.setFillColor(muted)
-        c.setFont("Helvetica", 10)
-        c.drawString(1 * inch, y, label)
-        c.setFillColor(navy)
-        c.setFont("Helvetica-Bold", 11)
-        c.drawString(3 * inch, y, str(value))
-        y -= 0.32 * inch
-
-    y -= 0.2 * inch
-    c.setStrokeColor(HexColor("#E2E8F0"))
-    c.line(1 * inch, y, w - 1 * inch, y)
-    y -= 0.4 * inch
-    c.setFillColor(navy)
-    c.setFont("Helvetica-Bold", 14)
-    c.drawString(1 * inch, y, "Amount Paid")
-    c.setFillColor(blue)
-    c.setFont("Helvetica-Bold", 20)
-    c.drawRightString(w - 1 * inch, y, f"Rs. {int(reg.get('amount', 0))}")
-
-    c.setFillColor(muted)
-    c.setFont("Helvetica", 9)
-    c.drawString(1 * inch, 0.75 * inch,
-                 "Thank you for registering with Veritech.AI.")
-    c.drawString(1 * inch, 0.6 * inch,
-                 "For queries: support@veritech.ai")
-
-    c.showPage()
-    c.save()
-    return buf.getvalue()
+def _cors_origins() -> list[str]:
+    configured = [item.strip() for item in os.environ.get("CORS_ORIGINS", "*").split(",") if item.strip()]
+    if "*" in configured:
+        return configured
+    for local in (
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
+    ):
+        if local not in configured:
+            configured.append(local)
+    return configured
 
 
 app.include_router(api)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
+    allow_origins=_cors_origins(),
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?",
     allow_methods=["*"],
     allow_headers=["*"],
 )

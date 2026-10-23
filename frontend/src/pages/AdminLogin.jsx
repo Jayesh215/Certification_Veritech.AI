@@ -20,12 +20,16 @@ export default function AdminLogin() {
       toast.success("Welcome back");
       nav("/admin");
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Invalid credentials");
+      const detail = err?.response?.data?.detail;
+      const message = !err?.response
+        ? "Cannot reach the server. Start the backend on port 8000 and try again."
+        : detail || "Invalid credentials";
+      toast.error(message);
     } finally { setLoading(false); }
   }
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center px-4">
+    <div className="flex min-h-dvh items-center justify-center overflow-y-auto px-4 py-8">
       <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-7 shadow-md">
         <div className="flex items-center gap-3 mb-6">
           <Logo className="h-9" />
@@ -42,7 +46,7 @@ export default function AdminLogin() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 veritech-focus"
+              className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-base text-slate-900 placeholder:text-slate-400 veritech-focus"
               placeholder="admin@veritech.ai"
               data-testid="admin-email-input"
               required
@@ -54,7 +58,7 @@ export default function AdminLogin() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 veritech-focus"
+              className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-base text-slate-900 placeholder:text-slate-400 veritech-focus"
               placeholder="••••••••"
               data-testid="admin-password-input"
               required

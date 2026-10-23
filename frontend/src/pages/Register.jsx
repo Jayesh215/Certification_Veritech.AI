@@ -1,27 +1,24 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { ArrowRight, Loader2 } from "lucide-react";
-import Stepper from "../components/Stepper";
+import { ArrowRight, ChevronDown, Loader2, Star } from "lucide-react";
 import { useRegistration } from "../context/RegistrationContext";
-import { api } from "../lib/api";
+import { api, formatDateRange } from "../lib/api";
+import useInternshipPeriods from "../lib/useInternshipPeriods";
 
-const INTERNSHIP_TYPES = [
-  "Web Development", "Java Development", "Python Development",
-  "React.js Development", "Angular Development", "AI / Machine Learning",
-  "Data Science", "UI/UX Design", "Software Testing",
-  "Full Stack Development", "Other",
-];
-const CERT_TYPES = ["Internship Certificate", "Internship Completion Certificate", "Training Certificate", "Other"];
+const CERTIFICATE_TYPE = "Internship Completion Certificate";
 const YEARS = ["2026", "2027", "2028", "2029", "2030", "Other"];
 const DURATIONS = [0, 1, 2, 3, 6];
+const durationLabel = (months) =>
+  months === 0 ? "1 Day Certificate" : `${months} Month${months > 1 ? "s" : ""} Certificate`;
+const isCareerDuration = (months) => months === 3 || months === 6;
 
 const emptyForm = {
   full_name: "", email: "", mobile: "",
   college: "", course: "", branch: "", graduation_year: "",
   internship_type: "", internship_start_date: "", internship_end_date: "",
   internship_id_input: "",
-  certificate_type: "Internship Certificate",
+  certificate_type: CERTIFICATE_TYPE,
   duration_months: 3,
   declaration_accepted: false,
 };
@@ -39,15 +36,93 @@ function Field({ label, required, children, error }) {
 }
 
 const inputCls =
-  "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 veritech-focus transition-all";
+  "w-full rounded-2xl border border-transparent bg-[#f6f7fb] px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 transition-all focus:border-blue-500 focus:bg-white focus:outline-none";
+
+function ThemeSelect({ value, onChange, placeholder, options, testId }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+  const selected = options.find((option) => option.value === value);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    function onPointerDown(event) {
+      if (!rootRef.current?.contains(event.target)) setOpen(false);
+    }
+    function onKeyDown(event) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        data-testid={testId}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        className={`${inputCls} flex items-center justify-between gap-3 text-left ${open ? "border-blue-500 bg-white" : ""} ${selected ? "" : "text-slate-400"}`}
+      >
+        <span className="truncate">{selected ? selected.label : placeholder}</span>
+        <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <ul
+          role="listbox"
+          className="absolute z-30 mt-2 max-h-64 w-full overflow-auto rounded-2xl border border-slate-100 bg-white p-1.5 shadow-[0_18px_40px_-24px_rgba(15,23,42,0.45)]"
+        >
+          {options.map((option) => {
+            const active = option.value === value;
+            return (
+              <li key={option.value}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={active}
+                  onClick={() => {
+                    onChange(option.value);
+                    setOpen(false);
+                  }}
+                  className={`w-full rounded-xl px-3 py-2 text-left text-sm font-medium ${
+                    active ? "bg-blue-600 text-white" : "text-slate-700 hover:bg-[#f6f7fb]"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 export default function Register() {
+  const periods = useInternshipPeriods();
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const { state, update } = useRegistration();
-  const [form, setForm] = useState(() => ({ ...emptyForm, ...(state.form || {}) }));
+  const [form, setForm] = useState(() => {
+    const next = { ...emptyForm, ...(state.form || {}), certificate_type: CERTIFICATE_TYPE };
+    if (!DURATIONS.includes(next.duration_months)) next.duration_months = 3;
+    return next;
+  });
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
+  const [domains, setDomains] = useState([]);
+
+  useEffect(() => {
+    api.get("/internship-domains")
+      .then((r) => setDomains(Array.isArray(r.data?.domains) ? r.data.domains : []))
+      .catch(() => setDomains([]));
+  }, []);
 
   useEffect(() => {
     const internId = params.get("intern") || state.internIdFromLink;
@@ -65,8 +140,6 @@ export default function Register() {
     if (!/^\S+@\S+\.\S+$/.test(form.email)) e.email = "Please enter a valid email address.";
     if (!/^[0-9+\-\s]{10,15}$/.test(form.mobile)) e.mobile = "Please enter a valid mobile number.";
     if (!form.internship_type) e.internship_type = "Please select your internship type.";
-    if (!form.internship_start_date) e.internship_start_date = "Please select a start date.";
-    if (!form.internship_end_date) e.internship_end_date = "Please select an end date.";
     if (form.duration_months === "" || form.duration_months === null || form.duration_months === undefined) e.duration_months = "Please select certificate duration.";
     if (!form.declaration_accepted) e.declaration_accepted = "Please accept the declaration.";
     setErrors(e);
@@ -85,24 +158,26 @@ export default function Register() {
       toast.success("Details saved");
       navigate("/review");
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Could not save details");
+      const detail = err?.response?.data?.detail;
+      const message = Array.isArray(detail)
+        ? (detail[0]?.msg || "Could not save details")
+        : (typeof detail === "string" ? detail : null);
+      toast.error(err?.response ? (message || "Could not save details") : "Cannot reach the server. Start the API on port 8000 and try again.");
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
-      <Stepper current={1} />
-
-      <div className="mb-6">
-        <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
-          Complete your certificate registration
+    <div className="mx-auto max-w-[1440px] px-4 py-4 sm:px-6 sm:py-6">
+      <section className="rounded-[28px] bg-white p-6 shadow-sm sm:p-8">
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+          Certificate registration
         </h1>
-        <p className="mt-2 text-slate-600">Submit your internship details to receive your Veritech.AI certificate.</p>
-      </div>
+        <p className="mt-1 text-sm text-slate-500">Enter the details that should appear on your certificate.</p>
+      </section>
 
-      <div className="rounded-3xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <div className="mt-4 rounded-[28px] bg-white shadow-sm">
         {/* Section: Personal */}
         <div className="p-6 sm:p-8">
           <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">01 · Personal Information</p>
@@ -120,7 +195,7 @@ export default function Register() {
             </Field>
             <Field label="Mobile Number" required error={errors.mobile}>
               <div className="flex gap-2">
-                <span className="inline-flex items-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-600">+91</span>
+                <span className="inline-flex items-center rounded-2xl bg-[#f6f7fb] px-3 text-sm font-semibold text-slate-600">+91</span>
                 <input data-testid="intern-phone-input" className={inputCls} placeholder="10-digit mobile number"
                   value={form.mobile} onChange={(e) => set("mobile", e.target.value)} />
               </div>
@@ -138,10 +213,13 @@ export default function Register() {
                 value={form.branch} onChange={(e) => set("branch", e.target.value)} />
             </Field>
             <Field label="Graduation Year">
-              <select className={inputCls} value={form.graduation_year} onChange={(e) => set("graduation_year", e.target.value)}>
-                <option value="">Select year</option>
-                {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
-              </select>
+              <ThemeSelect
+                value={form.graduation_year}
+                onChange={(value) => set("graduation_year", value)}
+                placeholder="Select year"
+                options={YEARS.map((year) => ({ value: year, label: year }))}
+                testId="graduation-year-select"
+              />
             </Field>
           </div>
         </div>
@@ -155,11 +233,13 @@ export default function Register() {
 
           <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-5">
             <Field label="Internship Type" required error={errors.internship_type}>
-              <select data-testid="intern-domain-select" className={inputCls}
-                value={form.internship_type} onChange={(e) => set("internship_type", e.target.value)}>
-                <option value="">Select Internship Type</option>
-                {INTERNSHIP_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
+              <ThemeSelect
+                value={form.internship_type}
+                onChange={(value) => set("internship_type", value)}
+                placeholder="Select Internship Type"
+                options={domains.map((domain) => ({ value: domain, label: domain }))}
+                testId="intern-domain-select"
+              />
             </Field>
             <Field label="Internship ID / Registration ID">
               <input
@@ -169,14 +249,6 @@ export default function Register() {
                 onChange={(e) => set("internship_id_input", e.target.value)}
                 readOnly={!!state.internIdFromLink}
               />
-            </Field>
-            <Field label="Internship Start Date" required error={errors.internship_start_date}>
-              <input data-testid="intern-start-date" type="date" className={inputCls}
-                value={form.internship_start_date} onChange={(e) => set("internship_start_date", e.target.value)} />
-            </Field>
-            <Field label="Internship End Date" required error={errors.internship_end_date}>
-              <input data-testid="intern-end-date" type="date" className={inputCls}
-                value={form.internship_end_date} onChange={(e) => set("internship_end_date", e.target.value)} />
             </Field>
           </div>
         </div>
@@ -189,33 +261,53 @@ export default function Register() {
           <h2 className="mt-1 text-xl font-bold text-slate-900">Certificate Preferences</h2>
 
           <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-5">
-            <Field label="Certificate Type">
-              <select className={inputCls} value={form.certificate_type} onChange={(e) => set("certificate_type", e.target.value)}>
-                {CERT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </Field>
-            <Field label="Certificate Duration" required error={errors.duration_months}>
-              <div className="grid grid-cols-5 gap-2">
-                {DURATIONS.map((m) => (
-                  <button
-                    type="button"
-                    key={m}
-                    onClick={() => set("duration_months", m)}
-                    data-testid={`duration-pill-${m === 0 ? "1d" : m + "m"}`}
-                    className={`rounded-xl border px-2.5 py-2 text-sm font-semibold transition-all ${
-                      form.duration_months === m
-                        ? "border-blue-600 bg-blue-50 text-blue-700"
-                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-                    }`}
-                  >
-                    {m === 0 ? "1D" : `${m}M`}
-                  </button>
-                ))}
-              </div>
-            </Field>
+            <div className="sm:col-span-2">
+              <Field label="Certificate Duration" required error={errors.duration_months}>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {DURATIONS.map((m) => {
+                    const selected = form.duration_months === m;
+                    const career = isCareerDuration(m);
+                    return (
+                      <button
+                        type="button"
+                        key={m}
+                        onClick={() => set("duration_months", m)}
+                        data-testid={`duration-pill-${m}m`}
+                        className={`relative rounded-2xl px-4 py-2.5 text-sm font-semibold transition-all ${
+                          selected
+                            ? "bg-blue-600 text-white"
+                            : career
+                              ? "border border-blue-200 bg-blue-50/70 text-slate-800 hover:border-blue-300"
+                              : "bg-[#f6f7fb] text-slate-600 hover:text-slate-900"
+                        }`}
+                      >
+                        {career && (
+                          <span
+                            className={`absolute -top-2 right-3 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
+                              selected
+                                ? "bg-white/20 text-white"
+                                : "border border-emerald-200 bg-emerald-50 text-emerald-700"
+                            }`}
+                          >
+                            <Star className={`h-2.5 w-2.5 ${selected ? "fill-white text-white" : "fill-emerald-500 text-emerald-600"}`} />
+                            Career
+                          </span>
+                        )}
+                        <span className="block">{durationLabel(m)}</span>
+                        {formatDateRange(periods[String(m)]?.start_date, periods[String(m)]?.end_date) && (
+                          <span className={`mt-0.5 block text-xs font-medium ${selected ? "text-blue-100" : "text-slate-500"}`}>
+                            {formatDateRange(periods[String(m)]?.start_date, periods[String(m)]?.end_date)}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </Field>
+            </div>
           </div>
 
-          <label className="mt-6 flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 cursor-pointer">
+          <label className="mt-6 flex cursor-pointer items-start gap-3 rounded-[20px] bg-[#f6f7fb] p-4">
             <input
               type="checkbox"
               className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
@@ -232,12 +324,12 @@ export default function Register() {
           )}
         </div>
 
-        <div className="border-t border-slate-100 bg-slate-50/60 px-6 py-4 sm:px-8 sm:py-5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        <div className="flex flex-col items-stretch justify-between gap-3 bg-[#f6f7fb] px-6 py-4 sm:flex-row sm:items-center sm:px-8 sm:py-5">
           <p className="text-xs text-slate-500">Secure · Simple · Official Veritech.AI Portal</p>
           <button
             onClick={submit}
             disabled={saving || !form.declaration_accepted}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            className="inline-flex items-center justify-center gap-2 rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             data-testid="registration-continue-btn"
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}

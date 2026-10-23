@@ -1,8 +1,9 @@
 import { useNavigate, Link } from "react-router-dom";
 import { CheckCircle2, Download, ArrowRight } from "lucide-react";
-import Stepper from "../components/Stepper";
+import AddToLinkedIn from "../components/AddToLinkedIn";
 import { useRegistration } from "../context/RegistrationContext";
-import { API_BASE, formatCurrency, formatDuration } from "../lib/api";
+import { API_BASE, datesFor, durationWithDates, formatCurrency } from "../lib/api";
+import useInternshipPeriods from "../lib/useInternshipPeriods";
 
 function InfoRow({ label, value, mono }) {
   return (
@@ -18,6 +19,7 @@ function InfoRow({ label, value, mono }) {
 export default function Success() {
   const nav = useNavigate();
   const { state } = useRegistration();
+  const periods = useInternshipPeriods();
   const reg = state.registration;
 
   if (!reg) {
@@ -37,7 +39,6 @@ export default function Success() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
-      <Stepper current={4} />
       <div className="rounded-3xl border border-slate-200 bg-white shadow-lg overflow-hidden">
         <div className="h-2 w-full bg-emerald-500" />
         <div className="p-8 sm:p-10 text-center">
@@ -62,7 +63,7 @@ export default function Success() {
             <InfoRow label="Registration ID" value={reg.registration_id} mono />
             <InfoRow label="Payment ID" value={reg.razorpay_payment_id} mono />
             <InfoRow label="Certificate" value={reg.certificate_type} />
-            <InfoRow label="Duration" value={formatDuration(reg.duration_months)} />
+            <InfoRow label="Duration" value={durationWithDates(reg.duration_months, datesFor(periods, reg.duration_months, reg).start, datesFor(periods, reg.duration_months, reg).end)} />
             <InfoRow label="Amount Paid" value={formatCurrency(reg.amount)} mono />
             <InfoRow label="Email" value={reg.email} />
             <InfoRow label="Payment Status" value={<span className="text-emerald-700">PAID</span>} />
@@ -79,15 +80,6 @@ export default function Success() {
             View Registration <ArrowRight className="h-4 w-4" />
           </button>
           <a
-            href={`${API_BASE}/receipts/${reg.registration_id}/download`}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700 transition-colors"
-            data-testid="receipt-download-pdf-btn"
-          >
-            <Download className="h-4 w-4" /> Download Receipt
-          </a>
-          <a
             href={`${API_BASE}/certificates/${reg.registration_id}/download`}
             target="_blank"
             rel="noreferrer"
@@ -96,6 +88,7 @@ export default function Success() {
           >
             <Download className="h-4 w-4" /> Download Certificate
           </a>
+          <AddToLinkedIn registration={reg} className="rounded-xl px-5 py-3 transition-colors" />
         </div>
 
         <p className="p-6 text-center text-xs text-slate-500">

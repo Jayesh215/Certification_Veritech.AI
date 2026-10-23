@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { XCircle, RefreshCw, Repeat } from "lucide-react";
 import { useRegistration } from "../context/RegistrationContext";
-import { api, formatCurrency, formatDuration } from "../lib/api";
+import { api, datesFor, durationWithDates, formatCurrency } from "../lib/api";
+import useInternshipPeriods from "../lib/useInternshipPeriods";
 
 export default function Failed() {
   const nav = useNavigate();
   const { state, update } = useRegistration();
+  const periods = useInternshipPeriods();
   const [reg, setReg] = useState(state.registration);
 
   // Refetch latest registration so we can surface the failure reason recorded by the backend
@@ -41,7 +43,7 @@ export default function Failed() {
           {reg && (
             <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5 text-left">
               <div className="flex justify-between py-1"><span className="text-sm text-slate-500">Registration ID</span><span className="text-sm font-semibold font-mono-tabular">{reg.registration_id}</span></div>
-              <div className="flex justify-between py-1"><span className="text-sm text-slate-500">Selected Plan</span><span className="text-sm font-semibold">{formatDuration(reg.duration_months)}</span></div>
+              <div className="flex justify-between py-1"><span className="text-sm text-slate-500">Selected Plan</span><span className="text-sm font-semibold text-right">{durationWithDates(reg.duration_months, datesFor(periods, reg.duration_months, reg).start, datesFor(periods, reg.duration_months, reg).end)}</span></div>
               <div className="flex justify-between py-1"><span className="text-sm text-slate-500">Amount</span><span className="text-sm font-semibold font-mono-tabular">{formatCurrency(reg.amount)}</span></div>
             </div>
           )}
@@ -63,8 +65,11 @@ export default function Failed() {
             </button>
           </div>
 
-          <p className="mt-5 text-xs text-slate-500">
+          <p className="mt-5 text-xs leading-relaxed text-slate-500">
             No amount was charged. If your bank shows a hold, it will be released automatically within a few working days.
+          </p>
+          <p className="mt-2 text-xs leading-relaxed text-slate-500">
+            If the amount has been debited, it will be refunded by Razorpay within 5–7 working days.
           </p>
         </div>
       </div>

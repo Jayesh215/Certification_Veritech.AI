@@ -1,14 +1,17 @@
 import { useEffect } from "react";
 import { X, Check, Minus, Star, Lock } from "lucide-react";
-import { api, COMPARISON_FEATURES, formatCurrency } from "../lib/api";
+import { api, COMPARISON_FEATURES, formatCurrency, formatDateRange } from "../lib/api";
 import { useState } from "react";
+import { SkeletonPulse } from "./PageSkeletons";
 
 export default function ComparePlansModal({ open, onClose, onSelect, selectedDuration }) {
   const [plans, setPlans] = useState([]);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    api.get("/plans").then((r) => setPlans(r.data)).catch(() => {});
+    setLoading(true);
+    api.get("/plans").then((r) => setPlans(r.data)).catch(() => {}).finally(() => setLoading(false));
     const onEsc = (e) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onEsc);
     document.body.style.overflow = "hidden";
@@ -49,6 +52,18 @@ export default function ComparePlansModal({ open, onClose, onSelect, selectedDur
 
         {/* Table */}
         <div className="flex-1 overflow-auto">
+          {loading && plans.length === 0 ? (
+            <div className="space-y-3 p-6" data-testid="compare-plans-skeleton">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="flex gap-3">
+                  <SkeletonPulse className="h-4 w-48" />
+                  <SkeletonPulse className="h-4 flex-1" />
+                  <SkeletonPulse className="h-4 flex-1" />
+                  <SkeletonPulse className="h-4 flex-1" />
+                </div>
+              ))}
+            </div>
+          ) : (
           <table className="w-full border-separate border-spacing-0 text-sm min-w-[720px]">
             <thead className="sticky top-0 z-10 bg-white">
               <tr>
@@ -71,6 +86,11 @@ export default function ComparePlansModal({ open, onClose, onSelect, selectedDur
                           <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">
                             {p.name}
                           </span>
+                          {formatDateRange(p.start_date, p.end_date) && (
+                            <span className="block text-[10px] font-medium normal-case tracking-normal text-slate-500">
+                              {formatDateRange(p.start_date, p.end_date)}
+                            </span>
+                          )}
                           {isPopular && (
                             <span className="rounded-full bg-blue-600 px-1.5 py-0.5 text-[9px] font-bold text-white uppercase tracking-wider">
                               Popular
@@ -148,6 +168,7 @@ export default function ComparePlansModal({ open, onClose, onSelect, selectedDur
               </tr>
             </tfoot>
           </table>
+          )}
         </div>
 
         {/* Footer badge */}

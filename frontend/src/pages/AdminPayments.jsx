@@ -1,7 +1,16 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { FileDown, Undo2, Loader2, X } from "lucide-react";
+import { FileDown, Undo2, Loader2, X, Search } from "lucide-react";
 import { api, API_BASE, formatCurrency } from "../lib/api";
+import usePagination from "../lib/usePagination";
+import useRowSelection from "../lib/useRowSelection";
+import { TableSkeleton } from "../components/PageSkeletons";
+import ListPagination from "../components/ListPagination";
+import ListBulkBar from "../components/ListBulkBar";
+import ClearDataModal from "../components/ClearDataModal";
+import ConfirmDeleteModal from "../components/ConfirmDeleteModal";
+
+const getPaymentRowId = (p) => p.registration_id;
 
 async function downloadCsv(path, filename) {
   const token = localStorage.getItem("veritech_admin_token");
@@ -130,10 +139,88 @@ function RefundModal({ payment, onClose, onDone }) {
 
 export default function AdminPayments() {
   const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [refundFor, setRefundFor] = useState(null);
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [clearOpen, setClearOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
-  const load = () => api.get("/admin/payments").then((r) => setRows(r.data));
+  const load = () => {
+    setLoading(true);
+    return api
+      .get("/admin/payments")
+      .then((r) => setRows(Array.isArray(r.data) ? r.data : []))
+      .finally(() => setLoading(false));
+  };
   useEffect(() => { load(); }, []);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return rows.filter((p) => {
+      if (status && p.status !== status) return false;
+      const day = (p.created_at || p.paid_at || "").slice(0, 10);
+      if (dateFrom && day && day < dateFrom) return false;
+      if (dateTo && day && day > dateTo) return false;
+      if (!q) return true;
+      const hay = [
+        p.razorpay_order_id,
+        p.registration_id,
+        p.full_name,
+        p.email,
+        p.razorpay_payment_id,
+        p.status,
+        String(p.amount ?? ""),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [rows, search, status, dateFrom, dateTo]);
+
+  const pagination = usePagination(filtered, {
+    resetKey: `${search}|${status}|${dateFrom}|${dateTo}`,
+  });
+  const selection = useRowSelection(pagination.pageItems, getPaymentRowId);
+
+  const handleBulkDelete = useCallback(async () => {
+    if (selection.selectedCount === 0) return;
+    setBusy(true);
+    try {
+      const { data } = await api.post("/admin/payments/bulk-delete", {
+        registration_ids: selection.selectedIds,
+      });
+      const n = data?.deleted?.payments ?? selection.selectedCount;
+      toast.success(`Deleted ${n} payment(s) from the database`);
+      setDeleteOpen(false);
+      selection.clearSelection();
+      await load();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Bulk delete failed");
+    } finally {
+      setBusy(false);
+    }
+  }, [selection]);
+
+  const handleClearAll = async () => {
+    setBusy(true);
+    try {
+      const { data } = await api.post("/admin/payments/clear", { confirm: "DELETE" });
+      const n = data?.deleted?.payments ?? 0;
+      toast.success(`Cleared ${n} payment(s) from the database`);
+      setClearOpen(false);
+      selection.clearSelection();
+      await load();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Clear all failed");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div>
@@ -150,40 +237,115 @@ export default function AdminPayments() {
           <FileDown className="h-4 w-4" /> Export CSV
         </button>
       </div>
+
+      <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:flex-row sm:flex-wrap sm:items-center sm:p-5">
+        <div className="flex flex-1 items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 min-w-[200px]">
+          <Search className="h-4 w-4 shrink-0 text-slate-400" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search order, registration, name, payment ID…"
+            className="flex-1 bg-transparent text-sm outline-none"
+            data-testid="payments-search-input"
+          />
+        </div>
+        <select
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+          className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+          data-testid="payments-status-filter"
+        >
+          <option value="">All statuses</option>
+          <option value="PAID">Paid</option>
+          <option value="CREATED">Created</option>
+          <option value="FAILED">Failed</option>
+          <option value="REFUNDED">Refunded</option>
+          <option value="PARTIALLY_REFUNDED">Partial refund</option>
+        </select>
+        <input
+          type="date"
+          value={dateFrom}
+          onChange={(e) => setDateFrom(e.target.value)}
+          className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+          data-testid="payments-date-from"
+          title="From date"
+        />
+        <input
+          type="date"
+          value={dateTo}
+          onChange={(e) => setDateTo(e.target.value)}
+          className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+          data-testid="payments-date-to"
+          title="To date"
+        />
+        {(search || status || dateFrom || dateTo) && (
+          <button
+            type="button"
+            onClick={() => { setSearch(""); setStatus(""); setDateFrom(""); setDateTo(""); }}
+            className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+            data-testid="payments-clear-filters"
+          >
+            Clear
+          </button>
+        )}
+        <ListBulkBar
+          selectedCount={selection.selectedCount}
+          busy={busy}
+          onBulkDelete={() => setDeleteOpen(true)}
+          onClearAll={() => setClearOpen(true)}
+          testId="payments-bulk"
+        />
+      </div>
+
+      {loading ? (
+        <TableSkeleton rows={8} cols={9} />
+      ) : (
       <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="admin-data-table w-full text-sm">
             <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase tracking-wider text-slate-500">
               <tr>
+                <th className="px-4 py-3 w-10">
+                  <input
+                    type="checkbox"
+                    checked={selection.allPageSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = selection.somePageSelected && !selection.allPageSelected;
+                    }}
+                    onChange={selection.togglePage}
+                    className="h-4 w-4 rounded border-slate-300"
+                    data-testid="payments-select-page"
+                    aria-label="Select page"
+                  />
+                </th>
                 <th className="text-left px-4 py-3 font-semibold">Order ID</th>
                 <th className="text-left px-4 py-3 font-semibold">Registration ID</th>
                 <th className="text-left px-4 py-3 font-semibold">Name</th>
                 <th className="text-left px-4 py-3 font-semibold">Payment ID</th>
                 <th className="text-left px-4 py-3 font-semibold">Amount</th>
                 <th className="text-left px-4 py-3 font-semibold">Status</th>
-                <th className="text-left px-4 py-3 font-semibold">Failure / Refund</th>
                 <th className="text-left px-4 py-3 font-semibold">Date</th>
                 <th className="text-left px-4 py-3 font-semibold">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((p) => (
-                <tr key={p.razorpay_order_id} className="border-b border-slate-100 hover:bg-slate-50/60">
+              {pagination.pageItems.map((p) => (
+                <tr key={p.razorpay_order_id || p.registration_id} className="border-b border-slate-100 hover:bg-slate-50/60">
+                  <td className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selection.isSelected(p.registration_id)}
+                      onChange={() => selection.toggle(p.registration_id)}
+                      className="h-4 w-4 rounded border-slate-300"
+                      aria-label={`Select ${p.registration_id}`}
+                    />
+                  </td>
                   <td className="px-4 py-3 font-mono-tabular text-xs">{p.razorpay_order_id}</td>
                   <td className="px-4 py-3 font-mono-tabular text-xs font-semibold">{p.registration_id}</td>
                   <td className="px-4 py-3">{p.full_name}</td>
                   <td className="px-4 py-3 font-mono-tabular text-xs">{p.razorpay_payment_id || "—"}</td>
                   <td className="px-4 py-3 font-mono-tabular">{formatCurrency(p.amount)}</td>
                   <td className="px-4 py-3"><StatusBadge s={p.status} /></td>
-                  <td className="px-4 py-3 text-xs text-slate-600 max-w-xs">
-                    {p.status === "FAILED" && (p.failure_description || p.failure_code || "—")}
-                    {(p.status === "REFUNDED" || p.status === "PARTIALLY_REFUNDED") && (
-                      <div>
-                        <div className="font-semibold text-slate-800">{formatCurrency(p.refund_amount)} · {p.refund_id}</div>
-                        <div className="mt-0.5 text-slate-500 truncate" title={p.refund_reason}>{p.refund_reason}</div>
-                      </div>
-                    )}
-                  </td>
                   <td className="px-4 py-3 text-slate-500 text-xs">{p.created_at?.slice(0, 10)}</td>
                   <td className="px-4 py-3">
                     {p.status === "PAID" && (
@@ -196,13 +358,24 @@ export default function AdminPayments() {
                   </td>
                 </tr>
               ))}
-              {rows.length === 0 && (
-                <tr><td colSpan={9} className="px-4 py-16 text-center text-sm text-slate-500">No payments yet</td></tr>
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="px-4 py-16 text-center text-sm text-slate-500">
+                    {rows.length === 0 ? "No payments yet" : "No payments match your search or filters"}
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>
         </div>
+        <ListPagination
+          {...pagination}
+          onPageSizeChange={pagination.setPageSize}
+          label="payments"
+          testId="payments-pagination"
+        />
       </div>
+      )}
 
       {refundFor && (
         <RefundModal
@@ -211,6 +384,29 @@ export default function AdminPayments() {
           onDone={() => { setRefundFor(null); load(); }}
         />
       )}
+
+      <ConfirmDeleteModal
+        open={deleteOpen}
+        title="Delete selected payments?"
+        description={`Permanently delete ${selection.selectedCount} payment record(s) from the database? This cannot be undone.`}
+        confirmLabel="Delete selected"
+        count={selection.selectedCount}
+        busy={busy}
+        onClose={() => !busy && setDeleteOpen(false)}
+        onConfirm={handleBulkDelete}
+        testId="payments-delete-modal"
+      />
+
+      <ClearDataModal
+        open={clearOpen}
+        title="Clear all payments"
+        description="This permanently deletes every payment and related audit log from the database. Registration records are kept."
+        confirmLabel="Clear all data"
+        busy={busy}
+        onClose={() => !busy && setClearOpen(false)}
+        onConfirm={handleClearAll}
+        testId="payments-clear-modal"
+      />
     </div>
   );
 }

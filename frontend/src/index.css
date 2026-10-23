@@ -8,7 +8,7 @@
   --veritech-blue: #2563EB;
   --veritech-blue-2: #1D4ED8;
   --veritech-blue-light: #EFF6FF;
-  --veritech-canvas: #F8FAFC;
+  --veritech-canvas: #f5f7fb;
   --veritech-border: #E2E8F0;
   --veritech-text-muted: #64748B;
 }
@@ -27,6 +27,55 @@ html, body {
 .font-mono-tabular {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
+}
+
+/* Overview / admin filter pills — match Live & Refresh controls */
+.vt-filter-pill {
+  height: 2rem;
+  border-radius: 9999px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  padding: 0 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #334155;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.vt-filter-pill:hover {
+  border-color: #cbd5e1;
+}
+.vt-filter-pill:focus,
+.vt-filter-pill:focus-visible {
+  border-color: #93c5fd;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+.vt-filter-pill option {
+  font-weight: 500;
+  color: #0f172a;
+}
+.vt-date-pill {
+  min-width: 8.75rem;
+  cursor: pointer;
+}
+
+/* Admin list tables — full grid with vertical + horizontal lines */
+.admin-data-table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.admin-data-table th,
+.admin-data-table td {
+  border: 1px solid #e2e8f0;
+  vertical-align: middle;
+}
+.admin-data-table thead th {
+  border-bottom-width: 1px;
+  background: #f8fafc;
+}
+.admin-data-table tbody tr:hover td {
+  background: rgba(248, 250, 252, 0.85);
 }
 
 @layer base {

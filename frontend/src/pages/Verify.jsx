@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { CheckCircle2, XCircle, ShieldCheck, ArrowLeft } from "lucide-react";
 import { Logo } from "../components/Logo";
-import { api } from "../lib/api";
+import { api, datesFor, durationWithDates } from "../lib/api";
+import useInternshipPeriods from "../lib/useInternshipPeriods";
+import { VerifySkeleton } from "../components/PageSkeletons";
 
 function Row({ label, value }) {
   return (
@@ -15,6 +17,7 @@ function Row({ label, value }) {
 
 export default function Verify() {
   const { certNumber } = useParams();
+  const periods = useInternshipPeriods();
   const [state, setState] = useState({ loading: true, data: null, error: null });
 
   useEffect(() => {
@@ -42,7 +45,7 @@ export default function Verify() {
 
         <div className="mt-6 rounded-3xl border border-slate-200 bg-white shadow-lg overflow-hidden">
           {state.loading ? (
-            <div className="p-10 text-center text-slate-500 text-sm">Verifying…</div>
+            <VerifySkeleton />
           ) : state.error ? (
             <>
               <div className="h-2 w-full bg-red-500" />
@@ -79,8 +82,7 @@ export default function Verify() {
                   <Row label="Holder Name" value={state.data.full_name} />
                   <Row label="Certificate" value={state.data.certificate_type} />
                   <Row label="Internship" value={state.data.internship_type} />
-                  <Row label="Duration" value={`${state.data.duration_months} Month${state.data.duration_months > 1 ? "s" : ""}`} />
-                  <Row label="Period" value={`${state.data.internship_start_date} — ${state.data.internship_end_date}`} />
+                  <Row label="Duration" value={durationWithDates(state.data.duration_months, datesFor(periods, state.data.duration_months, state.data).start, datesFor(periods, state.data.duration_months, state.data).end)} />
                   <Row label="Registration ID" value={<span className="font-mono-tabular">{state.data.registration_id}</span>} />
                   <Row label="Status" value={state.data.certificate_status} />
                   {state.data.issued_on && (

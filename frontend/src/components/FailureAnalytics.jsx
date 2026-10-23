@@ -7,7 +7,15 @@ export default function FailureAnalytics() {
   const [view, setView] = useState("by_description");
 
   useEffect(() => {
-    api.get("/admin/failure-analytics").then((r) => setData(r.data)).catch(() => setData({ total_failed: 0, by_description: [], by_code: [], by_step: [] }));
+    let alive = true;
+    const load = () => {
+      api.get("/admin/failure-analytics")
+        .then((r) => { if (alive) setData(r.data); })
+        .catch(() => { if (alive) setData({ total_failed: 0, by_description: [], by_code: [], by_step: [] }); });
+    };
+    load();
+    const poll = setInterval(load, 30000);
+    return () => { alive = false; clearInterval(poll); };
   }, []);
 
   if (!data) return null;
@@ -22,7 +30,7 @@ export default function FailureAnalytics() {
   ];
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm" data-testid="failure-analytics-widget">
+    <div className="rounded-[28px] bg-white p-5 shadow-sm" data-testid="failure-analytics-widget">
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">

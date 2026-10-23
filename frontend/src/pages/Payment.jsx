@@ -1,23 +1,47 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Loader2, ShieldCheck, Lock, Check, Star, Columns3 } from "lucide-react";
-import Stepper from "../components/Stepper";
+import { Loader2, ShieldCheck, Lock, Check, Columns3, X, ArrowLeft, Star } from "lucide-react";
 import ComparePlansModal from "../components/ComparePlansModal";
+import { PlansSkeleton } from "../components/PageSkeletons";
 import { useRegistration } from "../context/RegistrationContext";
-import { api, formatCurrency, formatDuration, PLAN_PERKS } from "../lib/api";
+import { api, formatCurrency, formatDateRange, formatDuration, PLAN_PERKS } from "../lib/api";
 
 export default function Payment() {
   const nav = useNavigate();
   const { state, update } = useRegistration();
   const reg = state.registration;
   const [plans, setPlans] = useState([]);
-  const [selected, setSelected] = useState(reg?.duration_months ?? 3);
-  const [processing, setProcessing] = useState(false);
+  const [plansLoading, setPlansLoading] = useState(true);
+  const [selected, setSelected] = useState(
+    Number.isFinite(reg?.duration_months) ? reg.duration_months : 3,
+  );
+  const [processing, setProcessing] = useState(null);
   const [compareOpen, setCompareOpen] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [certPreparing, setCertPreparing] = useState(false);
+  const paymentSucceededRef = useRef(false);
 
   useEffect(() => {
-    api.get("/plans").then((r) => setPlans(r.data)).catch(() => setPlans([]));
+    if (!checkoutOpen && !certPreparing) return;
+    const onEsc = (e) => {
+      if (e.key === "Escape" && !processing && !certPreparing) setCheckoutOpen(false);
+    };
+    document.addEventListener("keydown", onEsc);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onEsc);
+      document.body.style.overflow = "";
+    };
+  }, [checkoutOpen, processing, certPreparing]);
+
+  useEffect(() => {
+    setPlansLoading(true);
+    api
+      .get("/plans")
+      .then((r) => setPlans(Array.isArray(r.data) ? r.data : []))
+      .catch(() => setPlans([]))
+      .finally(() => setPlansLoading(false));
   }, []);
 
   if (!reg) {
@@ -34,36 +58,24 @@ export default function Payment() {
   const selectedPlan = plans.find((p) => p.duration_months === selected);
 
   async function proceedPay() {
-    if (!selectedPlan) return;
-    setProcessing(true);
+    if (!selectedPlan || processing) return;
+    setProcessing("razorpay");
     try {
       const { data: order } = await api.post("/payments/order", {
         registration_id: reg.registration_id,
         duration_months: selected,
+        gateway: "razorpay",
       });
       // Sync updated amount to local state
       update({ registration: { ...reg, duration_months: selected, amount: selectedPlan.price } });
 
       if (order.mock) {
-        // Mock Razorpay flow
-        await new Promise((r) => setTimeout(r, 900));
-        const { data: v } = await api.post("/payments/mock-complete", {
-          registration_id: reg.registration_id,
-          success: true,
-        });
-        if (v.verified) {
-          const { data: updated } = await api.get(`/registrations/${reg.registration_id}`);
-          update({ registration: updated });
-          nav("/success");
-        } else {
-          nav("/failed");
-        }
+        toast.error("Razorpay is not configured. Check RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET.");
         return;
       }
 
-      // Real Razorpay
       if (!window.Razorpay) {
-        toast.error("Payment gateway not loaded. Please refresh.");
+        toast.error("Razorpay checkout script not loaded. Please refresh.");
         return;
       }
       const options = {
@@ -71,11 +83,15 @@ export default function Payment() {
         amount: order.amount,
         currency: order.currency,
         name: "Veritech.AI",
-        description: `${selected}-Month Certificate Registration`,
+        description: `${formatDuration(selected)} Certificate Registration`,
         order_id: order.order_id,
         prefill: { name: order.name, email: order.email, contact: order.mobile },
         theme: { color: "#2563EB" },
         handler: async (resp) => {
+          paymentSucceededRef.current = true;
+          setCheckoutOpen(false);
+          setCertPreparing(true);
+          setProcessing(null);
           try {
             const { data: v } = await api.post("/payments/verify", {
               registration_id: reg.registration_id,
@@ -87,24 +103,32 @@ export default function Payment() {
               const { data: updated } = await api.get(`/registrations/${reg.registration_id}`);
               update({ registration: updated });
               nav("/success");
-            } else nav("/failed");
+            } else {
+              setCertPreparing(false);
+              nav("/failed");
+            }
           } catch {
+            setCertPreparing(false);
             nav("/failed");
           }
         },
         modal: {
           ondismiss: () => {
+            if (paymentSucceededRef.current) return;
             // If Razorpay reported a failure earlier, user closed the failure screen → send them to /failed
             if (window.__vt_payment_failed) {
               window.__vt_payment_failed = false;
+              setCheckoutOpen(false);
               nav("/failed");
             } else {
               toast.info("Payment cancelled. Your details are saved.");
+              setProcessing(null);
             }
           },
         },
       };
       window.__vt_payment_failed = false;
+      paymentSucceededRef.current = false;
       const rz = new window.Razorpay(options);
       rz.on("payment.failed", async (resp) => {
         // Mark for /failed navigation on dismiss, and record the failure server-side.
@@ -126,125 +150,195 @@ export default function Payment() {
       rz.open();
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Could not initiate payment");
-    } finally {
-      setProcessing(false);
+      setProcessing(null);
     }
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
-      <Stepper current={3} />
-      <div className="mb-6 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-        <div>
-          <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">Choose your certificate duration</h1>
-          <p className="mt-2 text-slate-600">Select the certificate duration you want to register for.</p>
+    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-10 lg:px-8">
+      <div className="mb-8 text-center">
+        <h1 className="text-4xl font-semibold tracking-tight text-slate-900 sm:text-5xl">Certificate plans</h1>
+        <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-slate-500 sm:text-base">
+          Choose the internship duration for your Veritech.AI certificate. The plan you pick is printed as the certificate duration.
+        </p>
+        <div className="mt-4 flex items-center justify-center gap-3 text-sm">
+          <button
+            type="button"
+            onClick={() => nav("/review")}
+            className="inline-flex items-center gap-1 font-medium text-slate-500 hover:text-slate-900"
+            data-testid="plans-back-btn"
+          >
+            <ArrowLeft className="h-4 w-4" /> Back
+          </button>
+          <span className="text-slate-300" aria-hidden="true">·</span>
+          <button
+            onClick={() => setCompareOpen(true)}
+            className="inline-flex items-center gap-2 font-medium text-slate-500 hover:text-slate-900"
+            data-testid="open-compare-plans-btn"
+          >
+            <Columns3 className="h-4 w-4" /> Compare all plans
+          </button>
         </div>
-        <button
-          onClick={() => setCompareOpen(true)}
-          className="inline-flex items-center gap-2 self-start rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-800 hover:border-blue-300 hover:text-blue-700 transition-colors whitespace-nowrap"
-          data-testid="open-compare-plans-btn"
-        >
-          <Columns3 className="h-4 w-4" /> Compare all plans
-        </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <div className="lg:col-span-2">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {plans.map((p) => {
-              const active = selected === p.duration_months;
-              const key = p.duration_months === 0 ? "1d" : `${p.duration_months}m`;
-              const perks = PLAN_PERKS[p.duration_months] || [];
-              const career = p.duration_months === 3 || p.duration_months === 6;
-              return (
-                <button
-                  key={p.duration_months}
-                  onClick={() => setSelected(p.duration_months)}
-                  data-testid={`duration-card-${key}`}
-                  className={`relative text-left rounded-2xl border p-5 sm:p-6 transition-all ${
-                    active
-                      ? "border-blue-600 bg-blue-50/40 shadow-md ring-1 ring-blue-600/10"
-                      : "border-slate-200 bg-white hover:border-blue-300 hover:shadow-sm"
-                  }`}
-                >
-                  {p.popular && (
-                    <span className="absolute -top-2.5 left-5 rounded-full bg-blue-600 px-2.5 py-0.5 text-[10px] font-bold text-white uppercase tracking-wider">
-                      Most Popular
-                    </span>
-                  )}
-                  {p.duration_months === 0 && (
-                    <span className="absolute -top-2.5 left-5 rounded-full bg-amber-500 px-2.5 py-0.5 text-[10px] font-bold text-white uppercase tracking-wider">
-                      Express
-                    </span>
-                  )}
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{p.name}</p>
-                      <p className="mt-3 text-3xl font-extrabold text-slate-900 font-mono-tabular">₹{p.price}</p>
-                      <p className="mt-1 text-sm text-slate-500">{p.description}</p>
-                    </div>
+      <div
+        className="rounded-[28px] px-3 py-8 sm:px-6"
+        style={{
+          backgroundImage: "linear-gradient(to right, #eef2f6 1px, transparent 1px), linear-gradient(to bottom, #eef2f6 1px, transparent 1px)",
+          backgroundSize: "42px 42px",
+        }}
+      >
+        {plansLoading ? (
+          <PlansSkeleton />
+        ) : (
+        <div className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-5">
+          {plans.map((p) => {
+            const active = selected === p.duration_months;
+            const key = p.duration_months === 0 ? "1d" : `${p.duration_months}m`;
+            const perks = PLAN_PERKS[p.duration_months] || [];
+            const popular = Boolean(p.popular);
+            const career = p.duration_months === 3 || p.duration_months === 6;
+            return (
+              <article
+                key={p.duration_months}
+                data-testid={`duration-card-${key}`}
+                onClick={() => setSelected(p.duration_months)}
+                className={`relative flex cursor-pointer flex-col rounded-[24px] border bg-white p-6 ${
+                  career
+                    ? "border-blue-300 shadow-[0_24px_50px_-24px_rgba(37,99,235,0.55)] xl:-mt-2"
+                    : "border-slate-200/80 shadow-sm"
+                } ${active ? "ring-2 ring-slate-900" : ""}`}
+              >
+                {(popular || career) && (
+                  <div className="absolute -top-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5">
+                    {popular && (
+                      <span className="rounded-full bg-slate-900 px-3 py-1 text-[11px] font-medium text-white">
+                        Most Popular
+                      </span>
+                    )}
                     {career && (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 uppercase tracking-wider whitespace-nowrap">
-                        <Star className="h-3 w-3" /> Career
+                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                        <Star className="h-3 w-3 fill-emerald-500 text-emerald-600" /> Career
                       </span>
                     )}
                   </div>
-
-                  {perks.length > 0 && (
-                    <ul className="mt-4 space-y-1.5 border-t border-slate-100 pt-4" data-testid={`perks-${key}`}>
-                      {perks.map((perk, i) => (
-                        <li key={i} className="flex items-start gap-2 text-xs text-slate-700 leading-relaxed">
-                          <Check className={`mt-0.5 h-3.5 w-3.5 flex-shrink-0 ${career ? "text-emerald-600" : "text-blue-600"}`} />
-                          <span>{perk}</span>
-                        </li>
-                      ))}
-                    </ul>
+                )}
+                <div className={career ? "-mx-6 -mt-6 mb-4 rounded-t-[24px] bg-gradient-to-b from-blue-50 via-white to-white px-6 pb-2 pt-8" : ""}>
+                  <h2 className="text-lg font-semibold text-slate-900">{p.name}</h2>
+                  {formatDateRange(p.start_date, p.end_date) && (
+                    <p className="mt-1 text-xs font-semibold text-blue-600">{formatDateRange(p.start_date, p.end_date)}</p>
                   )}
-
-                  <div className={`mt-5 inline-flex items-center gap-1.5 text-xs font-semibold ${
-                    active ? "text-blue-700" : "text-slate-500"
-                  }`}>
-                    <span className={`inline-block h-2 w-2 rounded-full ${
-                      active ? "bg-blue-600" : "bg-slate-300"
-                    }`} />
-                    {active ? "Selected" : "Select Plan"}
-                  </div>
+                  <p className="mt-1 min-h-[32px] text-xs leading-snug text-slate-500">{p.description}</p>
+                  <p className="mt-4 text-4xl font-semibold tracking-tight text-slate-900">
+                    ₹{Number(p.price).toLocaleString("en-IN")}
+                    <span className="text-base font-normal text-slate-400"> / Certificate</span>
+                  </p>
+                </div>
+                <ul className="mt-3 flex-1 space-y-1.5" data-testid={`perks-${key}`}>
+                  {perks.map((perk) => (
+                    <li key={perk} className="flex items-start gap-1.5 text-[11px] leading-tight text-slate-600">
+                      <span className="mt-px flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border border-slate-300 text-slate-500">
+                        <Check className="h-2 w-2" strokeWidth={2.5} />
+                      </span>
+                      <span>{perk}</span>
+                    </li>
+                  ))}
+                </ul>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (selected === p.duration_months) setCheckoutOpen(true);
+                    else setSelected(p.duration_months);
+                  }}
+                  className={`mt-4 w-full rounded-full px-4 py-2.5 text-sm font-medium transition-colors ${
+                    active ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-800 hover:bg-slate-200"
+                  }`}
+                >
+                  {active ? "Selected" : "Get started"}
                 </button>
-              );
-            })}
+              </article>
+            );
+          })}
+        </div>
+        )}
+      </div>
+
+      {certPreparing && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/70 p-4 backdrop-blur-sm"
+          data-testid="certificate-loading-screen"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="w-full max-w-sm rounded-[28px] border border-slate-200 bg-white px-8 py-10 text-center shadow-2xl">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-blue-50">
+              <Loader2 className="h-7 w-7 animate-spin text-blue-600" />
+            </div>
+            <p className="mt-5 text-lg font-semibold tracking-tight text-slate-900">
+              Your certificate is loading
+            </p>
+            <p className="mt-2 text-sm leading-relaxed text-slate-500">
+              Payment received. We&apos;re preparing your Veritech.AI certificate — this only takes a moment.
+            </p>
           </div>
         </div>
+      )}
 
-        <aside className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm h-fit sticky top-24">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Order Summary</p>
-          <div className="mt-4 space-y-3 text-sm">
-            <div className="flex justify-between"><span className="text-slate-500">Intern</span><span className="font-semibold text-slate-900">{reg.full_name}</span></div>
-            <div className="flex justify-between"><span className="text-slate-500">Certificate</span><span className="font-semibold text-slate-900">{reg.certificate_type}</span></div>
-            <div className="flex justify-between"><span className="text-slate-500">Duration</span><span className="font-semibold text-slate-900">{formatDuration(selected)}</span></div>
-            <div className="flex justify-between"><span className="text-slate-500">Registration ID</span><span className="font-mono-tabular text-xs font-semibold text-slate-900">{reg.registration_id}</span></div>
-          </div>
-          <div className="my-5 h-px bg-slate-100" />
-          <div className="flex items-end justify-between">
-            <span className="text-sm font-medium text-slate-600">Total</span>
-            <span className="text-3xl font-extrabold text-slate-900 font-mono-tabular" data-testid="order-summary-total">
-              {formatCurrency(selectedPlan?.price || 0)}
-            </span>
-          </div>
-          <button
-            onClick={proceedPay}
-            disabled={processing || !selectedPlan}
-            className="mt-5 w-full inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50 transition-all"
-            data-testid="razorpay-pay-button"
+      {checkoutOpen && !certPreparing && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm"
+          onClick={() => !processing && setCheckoutOpen(false)}
+          data-testid="checkout-modal"
+        >
+          <div
+            className="w-full max-w-md rounded-[24px] border border-slate-200 bg-white p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
           >
-            {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Lock className="h-4 w-4" />}
-            Proceed to Secure Payment
-          </button>
-          <div className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-slate-500">
-            <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
-            256-bit SSL · Razorpay Secure Gateway
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-lg font-semibold text-slate-900">Complete payment</p>
+                <p className="mt-1 text-sm text-slate-500">{reg.full_name} · {formatDuration(selected)} Certificate{formatDateRange(selectedPlan?.start_date, selectedPlan?.end_date) ? ` · ${formatDateRange(selectedPlan.start_date, selectedPlan.end_date)}` : ""}</p>
+                <p className="mt-1 font-mono text-xs text-slate-400">{reg.registration_id}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => !processing && setCheckoutOpen(false)}
+                className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="mt-5 text-3xl font-semibold tracking-tight text-slate-900" data-testid="order-summary-total">
+              {formatCurrency(selectedPlan?.price || 0)}
+            </p>
+            <button
+              onClick={() => proceedPay()}
+              disabled={!!processing || !selectedPlan}
+              className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#0C2454] px-5 py-3 text-sm font-semibold text-white hover:bg-[#081a3d] disabled:opacity-50"
+              data-testid="razorpay-pay-button"
+            >
+              {processing === "razorpay" ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-white text-[10px] font-extrabold tracking-tight text-[#0C2454]">
+                  Rz
+                </span>
+              )}
+              Pay with Razorpay
+            </button>
+            <p className="mt-2 text-center text-[11px] text-slate-500">
+              Original Razorpay checkout · UPI, cards, netbanking & wallets
+            </p>
+            <div className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-slate-500">
+              <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+              <Lock className="h-3 w-3" />
+              256-bit SSL · Razorpay Secure Gateway
+            </div>
           </div>
-        </aside>
-      </div>
+        </div>
+      )}
 
       <ComparePlansModal
         open={compareOpen}

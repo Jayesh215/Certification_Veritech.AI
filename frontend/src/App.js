@@ -25,11 +25,12 @@ function Shell({ children }) {
   const loc = useLocation();
   const isAdmin = loc.pathname.startsWith("/admin");
   const isVerify = loc.pathname.startsWith("/verify");
-  const hideChrome = isAdmin || isVerify;
+  const hideChrome = isAdmin || isVerify || loc.pathname === "/";
+  const lockViewport = isAdmin && loc.pathname !== "/admin/login";
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
+    <div className={`${lockViewport ? "h-screen overflow-hidden" : "min-h-screen"} ${hideChrome ? "bg-slate-50" : "bg-[#f5f7fb]"} flex flex-col`}>
       {!hideChrome && <Header />}
-      <div className="flex-1">{children}</div>
+      <div className={lockViewport ? "min-h-0 flex-1 overflow-hidden" : "flex-1"}>{children}</div>
       {!hideChrome && <Footer />}
     </div>
   );

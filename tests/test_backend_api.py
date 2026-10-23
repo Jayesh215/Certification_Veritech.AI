@@ -230,11 +230,10 @@ try:
 except Exception as e:
     rec("Certificate download", False, str(e))
 
-# 15. Receipt download
+# 15. Receipt download is removed
 try:
     r = requests.get(f"{BASE}/receipts/{reg_id_1}/download", timeout=20)
-    ct = r.headers.get("content-type","")
-    rec("Receipt download PAID -> PDF", r.status_code == 200 and "pdf" in ct, f"{r.status_code} {ct}")
+    rec("Receipt download is disabled", r.status_code == 404, f"{r.status_code}")
 except Exception as e:
     rec("Receipt download", False, str(e))
 
