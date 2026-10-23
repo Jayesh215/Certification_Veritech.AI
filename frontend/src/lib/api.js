@@ -1,15 +1,17 @@
 import axios from "axios";
 
 function resolveBackendUrl() {
-  const configured = process.env.REACT_APP_BACKEND_URL || "";
+  const configured = (process.env.REACT_APP_BACKEND_URL || "").replace(/\/$/, "");
   // Prefer IPv4 — on Windows, "localhost" often resolves to ::1 while the API binds 127.0.0.1
   const toIpv4 = (url) => (url || "").replace("://localhost:", "://127.0.0.1:");
+  const isLocal = (url) => /:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(url || "");
   if (typeof window === "undefined") return toIpv4(configured) || configured;
   const host = window.location.hostname;
   if (host === "localhost" || host === "127.0.0.1") {
     return toIpv4(configured) || `${window.location.protocol}//127.0.0.1:8000`;
   }
-  return `${window.location.protocol}//${host}:8000`;
+  if (configured && !isLocal(configured)) return configured;
+  return window.location.origin;
 }
 
 const BACKEND_URL = resolveBackendUrl();

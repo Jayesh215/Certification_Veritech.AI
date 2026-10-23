@@ -1,4 +1,5 @@
 """Veritech.AI Certificate Registration Portal - FastAPI backend."""
+import asyncio
 import hashlib
 import hmac
 import io
@@ -38,7 +39,9 @@ RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "rzp_test_REPLACE_ME")
 RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "REPLACE_ME_SECRET")
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "jayeshgangurde15@gmail.com").strip().lower()
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "Jayesh@123")
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://veritech-intern.preview.emergentagent.com")
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://certificate.veritech-ai.com")
+if os.environ.get("VERCEL") and ("localhost" in FRONTEND_URL or "127.0.0.1" in FRONTEND_URL):
+    FRONTEND_URL = "https://certificate.veritech-ai.com"
 
 db = DocumentStore()
 
@@ -275,9 +278,19 @@ DEFAULT_PLANS = [
 ]
 
 
+_startup_lock = asyncio.Lock()
+_startup_done = False
+
+
 @app.on_event("startup")
 async def startup():
-    await db.connect()
+    global _startup_done
+    if _startup_done and db.pool is not None:
+        return
+    async with _startup_lock:
+        if _startup_done and db.pool is not None:
+            return
+        await db.connect()
     # Seed plans
     for plan in DEFAULT_PLANS:
         existing = await db.plans.find_one({"duration_months": plan["duration_months"]})
@@ -315,7 +328,15 @@ async def startup():
         await _get_branding()
     except Exception as e:
         logger.warning("cache warm failed: %s", e)
+    _startup_done = True
     logger.info("Startup complete: plans and admin seeded")
+
+
+@app.middleware("http")
+async def _ensure_database(request, call_next):
+    if db.pool is None:
+        await startup()
+    return await call_next(request)
 
 
 @app.on_event("shutdown")
@@ -1862,6 +1883,7 @@ def _cors_origins() -> list[str]:
         "http://127.0.0.1:3000",
         "http://localhost:3001",
         "http://127.0.0.1:3001",
+        "https://certificate.veritech-ai.com",
     ):
         if local not in configured:
             configured.append(local)

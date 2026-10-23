@@ -21,8 +21,11 @@ export default function AdminLogin() {
       nav("/admin");
     } catch (err) {
       const detail = err?.response?.data?.detail;
+      const onLocalHost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
       const message = !err?.response
-        ? "Cannot reach the server. Start the backend on port 8000 and try again."
+        ? (onLocalHost
+          ? "Cannot reach the server. Start the backend on port 8000 and try again."
+          : "Cannot reach the server. Please try again in a moment.")
         : detail || "Invalid credentials";
       toast.error(message);
     } finally { setLoading(false); }

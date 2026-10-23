@@ -428,7 +428,10 @@ class DocumentStore:
         return Collection(self, name)
 
     async def connect(self) -> None:
-        # Larger pool so many concurrent payments / page loads are not queued.
+        if self.pool is not None:
+            return
+        # Serverless instances must not open a large pool against the Supabase pooler.
+        on_vercel = bool(os.environ.get("VERCEL"))
         self.pool = await asyncpg.create_pool(
             host=os.environ.get("SUPABASE_DB_HOST", "aws-0-ap-northeast-1.pooler.supabase.com"),
             port=int(os.environ.get("SUPABASE_DB_PORT", "5432")),
@@ -436,8 +439,8 @@ class DocumentStore:
             password=os.environ["SUPABASE_DB_PASSWORD"],
             database=os.environ.get("SUPABASE_DB_NAME", "postgres"),
             ssl=_ssl_context(),
-            min_size=2,
-            max_size=20,
+            min_size=1 if on_vercel else 2,
+            max_size=2 if on_vercel else 20,
             statement_cache_size=0,
             command_timeout=30,
         )
