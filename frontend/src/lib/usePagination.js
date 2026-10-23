@@ -12,7 +12,7 @@ export default function usePagination(items, options = {}) {
   const pageSizeOption = typeof options === "number" ? options : options.pageSize;
   const resetKey = typeof options === "number" ? undefined : options.resetKey;
 
-  const list = Array.isArray(items) ? items : [];
+  const list = useMemo(() => (Array.isArray(items) ? items : []), [items]);
   const [pageSize, setPageSize] = useState(Math.max(1, Number(pageSizeOption) || DEFAULT_PAGE_SIZE));
   const size = Math.max(1, Number(pageSize) || DEFAULT_PAGE_SIZE);
   const total = list.length;

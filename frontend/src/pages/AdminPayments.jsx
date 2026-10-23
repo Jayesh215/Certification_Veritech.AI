@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { FileDown, Undo2, Loader2, X, Search } from "lucide-react";
 import { api, API_BASE, formatCurrency } from "../lib/api";
@@ -187,7 +187,7 @@ export default function AdminPayments() {
   });
   const selection = useRowSelection(pagination.pageItems, getPaymentRowId);
 
-  const handleBulkDelete = useCallback(async () => {
+  const handleBulkDelete = async () => {
     if (selection.selectedCount === 0) return;
     setBusy(true);
     try {
@@ -204,7 +204,7 @@ export default function AdminPayments() {
     } finally {
       setBusy(false);
     }
-  }, [selection]);
+  };
 
   const handleClearAll = async () => {
     setBusy(true);

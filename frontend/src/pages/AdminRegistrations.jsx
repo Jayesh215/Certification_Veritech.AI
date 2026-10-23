@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Search, FileDown } from "lucide-react";
@@ -72,7 +72,7 @@ export default function AdminRegistrations() {
   });
   const selection = useRowSelection(pagination.pageItems, getRowId);
 
-  const handleBulkDelete = useCallback(async () => {
+  const handleBulkDelete = async () => {
     if (selection.selectedCount === 0) return;
     setBusy(true);
     try {
@@ -89,7 +89,7 @@ export default function AdminRegistrations() {
     } finally {
       setBusy(false);
     }
-  }, [selection, search, status, duration]);
+  };
 
   const handleClearAll = async () => {
     setBusy(true);

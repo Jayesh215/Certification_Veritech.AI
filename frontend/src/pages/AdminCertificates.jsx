@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Award, Download, Eye, FileDown, MoreVertical, X, Loader2, Search } from "lucide-react";
 import { api, API_BASE, datesFor, durationWithDates, formatDuration } from "../lib/api";
@@ -87,7 +87,7 @@ export default function AdminCertificates() {
   });
   const selection = useRowSelection(pagination.pageItems, getCertRowId);
 
-  const handleBulkDelete = useCallback(async () => {
+  const handleBulkDelete = async () => {
     if (selection.selectedCount === 0) return;
     setBusy(true);
     try {
@@ -104,7 +104,7 @@ export default function AdminCertificates() {
     } finally {
       setBusy(false);
     }
-  }, [selection]);
+  };
 
   const handleClearAll = async () => {
     setBusy(true);
