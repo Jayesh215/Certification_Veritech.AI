@@ -233,11 +233,12 @@ export default function AdminRegistrations() {
                           type="button"
                           onClick={() => sendReminder(r)}
                           disabled={Boolean(mailingId) || busy}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          title={sending ? "Sending…" : "Send email"}
+                          aria-label={sending ? "Sending reminder email" : "Send reminder email"}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
                           data-testid={`send-reminder-${r.registration_id}`}
                         >
-                          {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
-                          {sending ? "Sending…" : "Send email"}
+                          {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
                         </button>
                       ) : (
                         <span className="text-xs text-slate-400">—</span>
