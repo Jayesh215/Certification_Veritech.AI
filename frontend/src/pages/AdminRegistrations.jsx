@@ -112,11 +112,21 @@ export default function AdminRegistrations() {
     const id = row?.registration_id;
     if (!id || mailingId) return;
     setMailingId(id);
+    const path = `/admin/registrations/${encodeURIComponent(id)}/send-reminder`;
+    // #region agent log
+    fetch('http://127.0.0.1:7516/ingest/c28c4a9d-ffaa-4193-982c-356d4f7ca568',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'788dd8'},body:JSON.stringify({sessionId:'788dd8',runId:'post-fix',hypothesisId:'A',location:'AdminRegistrations.jsx:sendReminder',message:'reminder request start',data:{path,apiBase:API_BASE,status:row?.payment_status||null,hasId:Boolean(id)},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     try {
-      const { data } = await api.post(`/admin/registrations/${id}/send-reminder`);
+      const { data } = await api.post(path);
+      // #region agent log
+      fetch('http://127.0.0.1:7516/ingest/c28c4a9d-ffaa-4193-982c-356d4f7ca568',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'788dd8'},body:JSON.stringify({sessionId:'788dd8',runId:'post-fix',hypothesisId:'A',location:'AdminRegistrations.jsx:sendReminder',message:'reminder request success',data:{path,ok:Boolean(data?.ok),hasEmailId:Boolean(data?.email_id)},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       toast.success(`Reminder sent to ${data?.to || row.email}`);
       await load();
     } catch (e) {
+      // #region agent log
+      fetch('http://127.0.0.1:7516/ingest/c28c4a9d-ffaa-4193-982c-356d4f7ca568',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'788dd8'},body:JSON.stringify({sessionId:'788dd8',runId:'post-fix',hypothesisId:'A',location:'AdminRegistrations.jsx:sendReminder',message:'reminder request failed',data:{path,apiBase:API_BASE,httpStatus:e?.response?.status??null,detail:e?.response?.data?.detail??null,fullUrl:e?.config?`${e.config.baseURL||''}${e.config.url||''}`:null},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       toast.error(e?.response?.data?.detail || "Could not send reminder email");
     } finally {
       setMailingId("");
