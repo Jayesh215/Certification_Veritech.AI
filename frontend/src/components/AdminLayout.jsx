@@ -1,6 +1,18 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate, Navigate, useLocation } from "react-router-dom";
-import { LayoutDashboard, Users, Receipt, Award, LogOut, Stamp, Menu, X } from "lucide-react";
+import {
+  LayoutDashboard,
+  Users,
+  Receipt,
+  Award,
+  LogOut,
+  Stamp,
+  Menu,
+  X,
+  FolderCog,
+  GraduationCap,
+  ChevronDown,
+} from "lucide-react";
 import { Logo } from "./Logo";
 import { api, setAdminToken } from "../lib/api";
 
@@ -12,13 +24,24 @@ const items = [
   { to: "/admin/branding", label: "Branding", icon: Stamp },
 ];
 
+const manageItems = [
+  { to: "/admin/interns", label: "Interns", icon: GraduationCap },
+];
+
 function displayName(email) {
   const local = (email || "admin").split("@")[0].replace(/\d+$/, "");
   if (!local) return "Admin";
   return local.charAt(0).toUpperCase() + local.slice(1);
 }
 
-function SidebarNav({ onNavigate, logout, name, email, initials }) {
+function SidebarNav({ onNavigate, logout, name, email, initials, pathname }) {
+  const manageActive = manageItems.some((item) => pathname.startsWith(item.to));
+  const [manageOpen, setManageOpen] = useState(manageActive);
+
+  useEffect(() => {
+    if (manageActive) setManageOpen(true);
+  }, [manageActive]);
+
   return (
     <>
       <div className="flex items-center gap-2 rounded-2xl bg-white p-3">
@@ -41,6 +64,41 @@ function SidebarNav({ onNavigate, logout, name, email, initials }) {
             <Icon className="h-4 w-4" /> {label}
           </NavLink>
         ))}
+
+        <div className="pt-1" data-testid="admin-nav-manage">
+          <button
+            type="button"
+            onClick={() => setManageOpen((open) => !open)}
+            className={`flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition-colors ${
+              manageActive ? "bg-white/15 text-white" : "text-white/70 hover:bg-white/10 hover:text-white"
+            }`}
+            aria-expanded={manageOpen}
+            data-testid="admin-nav-manage-toggle"
+          >
+            <FolderCog className="h-4 w-4" />
+            <span className="flex-1 text-left">Manage</span>
+            <ChevronDown className={`h-4 w-4 transition-transform ${manageOpen ? "rotate-180" : ""}`} />
+          </button>
+          {manageOpen && (
+            <div className="mt-1 space-y-1 border-l border-white/15 ml-4 pl-2">
+              {manageItems.map(({ to, label, icon: Icon }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  onClick={onNavigate}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 rounded-2xl px-3 py-2 text-sm font-medium transition-colors ${
+                      isActive ? "bg-white text-black" : "text-white/70 hover:bg-white/10 hover:text-white"
+                    }`
+                  }
+                  data-testid={`admin-nav-${label.toLowerCase()}`}
+                >
+                  <Icon className="h-4 w-4" /> {label}
+                </NavLink>
+              ))}
+            </div>
+          )}
+        </div>
       </nav>
       <div className="px-1">
         <div className="flex items-center gap-3">
@@ -108,7 +166,13 @@ export default function AdminLayout() {
         {/* Desktop / large tablet+: persistent sidebar */}
         <div className="hidden h-full shrink-0 p-3 lg:flex">
           <aside className="flex w-64 min-h-0 flex-col overflow-y-auto rounded-[28px] bg-[#0F172A] p-4 text-white">
-            <SidebarNav logout={logout} name={name} email={email} initials={initials} />
+            <SidebarNav
+              logout={logout}
+              name={name}
+              email={email}
+              initials={initials}
+              pathname={location.pathname}
+            />
           </aside>
         </div>
 
@@ -149,6 +213,7 @@ export default function AdminLayout() {
               name={name}
               email={email}
               initials={initials}
+              pathname={location.pathname}
             />
           </aside>
         </div>

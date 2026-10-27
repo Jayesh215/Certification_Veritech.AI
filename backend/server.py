@@ -32,7 +32,11 @@ from starlette.middleware.cors import CORSMiddleware
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
-from email_service import send_payment_success_email, send_pending_reminder_email
+from email_service import (
+    send_intern_claim_invite_email,
+    send_payment_success_email,
+    send_pending_reminder_email,
+)
 
 JWT_SECRET = os.environ["JWT_SECRET"]
 RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "rzp_test_REPLACE_ME")
@@ -169,6 +173,21 @@ class BulkDeleteRequest(BaseModel):
     registration_ids: list[str] = Field(..., min_length=1)
 
 
+class InternBulkDeleteRequest(BaseModel):
+    intern_ids: list[str] = Field(..., min_length=1)
+
+
+class InternUpdateRequest(BaseModel):
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    mobile: Optional[str] = None
+    college: Optional[str] = None
+    course: Optional[str] = None
+    branch: Optional[str] = None
+    graduation_year: Optional[str] = None
+    internship_type: Optional[str] = None
+
+
 class ClearConfirmRequest(BaseModel):
     """Require explicit confirmation text to wipe a collection."""
     confirm: str = Field(min_length=1, max_length=32)
@@ -228,6 +247,211 @@ async def next_registration_id() -> str:
     )
     seq = counter["seq"] if counter else 1
     return f"VT-{year}-{seq:06d}"
+
+
+async def next_intern_id() -> str:
+    year = datetime.now(timezone.utc).year
+    counter = await db.counters.find_one_and_update(
+        {"_id": f"intern_{year}"},
+        {"$inc": {"seq": 1}},
+        upsert=True,
+        return_document=True,
+    )
+    seq = counter["seq"] if counter else 1
+    return f"INT-{year}-{seq:06d}"
+
+
+INTERN_CSV_COLUMNS = [
+    "full_name",
+    "email",
+    "mobile",
+    "college",
+    "course",
+    "branch",
+    "graduation_year",
+    "internship_type",
+]
+_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+
+
+def _normalize_intern_csv_header(value: str) -> str:
+    return re.sub(r"[\s\-]+", "_", (value or "").strip().lower())
+
+
+def _intern_field_errors(full_name: str, email: str, mobile: str) -> tuple[list[str], list[str]]:
+    """Return (error messages, invalid field names). Empty lists means valid."""
+    errors: list[str] = []
+    fields: list[str] = []
+    if len((full_name or "").strip()) < 2:
+        errors.append("Name is required (min 2 characters)")
+        fields.append("full_name")
+    email_norm = (email or "").strip().lower()
+    if not _EMAIL_RE.match(email_norm):
+        errors.append("Invalid email")
+        fields.append("email")
+    if not re.match(r"^[0-9+\-\s]{10,15}$", (mobile or "").strip()):
+        errors.append("Invalid mobile (10–15 digits)")
+        fields.append("mobile")
+    return errors, fields
+
+
+def _intern_cell_str(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value).strip()
+
+
+def _parse_intern_csv_bytes(raw: bytes) -> list[dict]:
+    text = None
+    for encoding in ("utf-8-sig", "utf-16", "utf-16-le", "cp1252", "latin-1"):
+        try:
+            text = raw.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    if text is None:
+        raise HTTPException(400, "Could not read CSV encoding")
+    sample = text[:8192]
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+    except csv.Error:
+        dialect = csv.excel
+    reader = csv.DictReader(io.StringIO(text), dialect=dialect)
+    if not reader.fieldnames:
+        raise HTTPException(400, "File has no header row")
+    rows: list[dict] = []
+    for row in reader:
+        rows.append({str(k): _intern_cell_str(v) for k, v in (row or {}).items() if k is not None})
+    return rows
+
+
+def _parse_intern_xlsx_bytes(raw: bytes) -> list[dict]:
+    try:
+        from openpyxl import load_workbook
+    except ImportError as exc:
+        raise HTTPException(500, "Excel (.xlsx) support is not installed on the server") from exc
+    try:
+        wb = load_workbook(filename=io.BytesIO(raw), read_only=True, data_only=True)
+    except Exception as exc:
+        raise HTTPException(400, f"Could not read Excel file: {exc}") from exc
+    ws = wb.active
+    rows_iter = ws.iter_rows(values_only=True)
+    try:
+        header_row = next(rows_iter)
+    except StopIteration:
+        raise HTTPException(400, "Excel sheet is empty")
+    headers = [_intern_cell_str(h) for h in header_row]
+    if not any(headers):
+        raise HTTPException(400, "Excel file has no header row")
+    rows: list[dict] = []
+    for values in rows_iter:
+        if values is None:
+            continue
+        row = {}
+        empty = True
+        for idx, header in enumerate(headers):
+            if not header:
+                continue
+            val = _intern_cell_str(values[idx] if idx < len(values) else "")
+            if val:
+                empty = False
+            row[header] = val
+        if not empty:
+            rows.append(row)
+    return rows
+
+
+def _parse_intern_xls_bytes(raw: bytes) -> list[dict]:
+    """Legacy .xls via xlrd. xlrd 2.x only supports .xls (not .xlsx)."""
+    try:
+        import xlrd
+    except ImportError as exc:
+        raise HTTPException(500, "Excel (.xls) support is not installed on the server") from exc
+    try:
+        book = xlrd.open_workbook(file_contents=raw)
+    except Exception as exc:
+        raise HTTPException(
+            400,
+            "Could not read .xls file. Save as .xlsx or CSV and try again.",
+        ) from exc
+    sheet = book.sheet_by_index(0)
+    if sheet.nrows < 1:
+        raise HTTPException(400, "Excel sheet is empty")
+    headers = [_intern_cell_str(sheet.cell_value(0, c)) for c in range(sheet.ncols)]
+    if not any(headers):
+        raise HTTPException(400, "Excel file has no header row")
+    rows: list[dict] = []
+    for r in range(1, sheet.nrows):
+        row = {}
+        empty = True
+        for c, header in enumerate(headers):
+            if not header:
+                continue
+            val = _intern_cell_str(sheet.cell_value(r, c))
+            if val:
+                empty = False
+            row[header] = val
+        if not empty:
+            rows.append(row)
+    return rows
+
+
+def _parse_intern_upload(filename: str, raw: bytes) -> tuple[list[dict], str]:
+    name = (filename or "").lower().strip()
+    # Magic-byte fallback when extension is missing/wrong
+    is_zip_xlsx = len(raw) >= 2 and raw[:2] == b"PK"
+    is_ole_xls = len(raw) >= 8 and raw[:8] == b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1"
+
+    if name.endswith((".xlsx", ".xlsm", ".xltx", ".xltm")) or (not name and is_zip_xlsx):
+        return _parse_intern_xlsx_bytes(raw), "excel_import"
+    if name.endswith(".xls") or (not name.endswith((".csv", ".txt", ".tsv")) and is_ole_xls):
+        # Some .xlsx mislabeled — try openpyxl first if ZIP
+        if is_zip_xlsx:
+            return _parse_intern_xlsx_bytes(raw), "excel_import"
+        return _parse_intern_xls_bytes(raw), "excel_import"
+    if name.endswith((".csv", ".txt", ".tsv")) or not name or name.endswith(".csv"):
+        return _parse_intern_csv_bytes(raw), "csv_import"
+    if is_zip_xlsx:
+        return _parse_intern_xlsx_bytes(raw), "excel_import"
+    if is_ole_xls:
+        return _parse_intern_xls_bytes(raw), "excel_import"
+    # Default: try CSV (comma/semicolon/tab)
+    try:
+        return _parse_intern_csv_bytes(raw), "csv_import"
+    except HTTPException:
+        raise HTTPException(
+            400,
+            "Unsupported file. Upload CSV (.csv/.txt/.tsv) or Excel (.xlsx/.xlsm/.xls).",
+        )
+
+
+def _intern_template_csv() -> str:
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(INTERN_CSV_COLUMNS)
+    w.writerow([
+        "Ada Lovelace",
+        "ada.lovelace@example.com",
+        "9876543210",
+        "Veritech Institute",
+        "B.Tech",
+        "Computer Science",
+        "2026",
+        "Web Development",
+    ])
+    w.writerow([
+        "Alan Turing",
+        "alan.turing@example.com",
+        "9123456780",
+        "Veritech Institute",
+        "B.Sc",
+        "Mathematics",
+        "2025",
+        "AI / Machine Learning",
+    ])
+    return buf.getvalue()
 
 
 def create_admin_token(email: str) -> str:
@@ -1002,14 +1226,6 @@ async def admin_send_registration_reminder(
 
     cta_url = f"{FRONTEND_URL.rstrip('/')}/status?q={registration_id}"
     message_id = await send_pending_reminder_email(reg, cta_url=cta_url)
-    # #region agent log
-    try:
-        import json as _json, time as _time
-        with open(r"c:\Users\Jayesh\OneDrive\Documents\GitHub\Certification_Veritech.AI\.cursor\debug-788dd8.log", "a", encoding="utf-8") as _f:
-            _f.write(_json.dumps({"sessionId":"788dd8","runId":"post-fix","hypothesisId":"F","location":"server.py:admin_send_registration_reminder","message":"resend result","data":{"registration_id":registration_id,"has_message_id":bool(message_id),"status":status},"timestamp":int(_time.time()*1000)}) + "\n")
-    except Exception:
-        pass
-    # #endregion
     if not message_id:
         raise HTTPException(502, "Could not send the reminder email. Check email settings and try again.")
 
@@ -1028,14 +1244,6 @@ async def admin_send_registration_reminder(
         "email_id": message_id,
         "created_at": now_iso(),
     })
-    # #region agent log
-    try:
-        import json as _json, time as _time
-        with open(r"c:\Users\Jayesh\OneDrive\Documents\GitHub\Certification_Veritech.AI\.cursor\debug-788dd8.log", "a", encoding="utf-8") as _f:
-            _f.write(_json.dumps({"sessionId":"788dd8","runId":"post-fix","hypothesisId":"F","location":"server.py:admin_send_registration_reminder","message":"reminder audit saved","data":{"registration_id":registration_id,"ok":True},"timestamp":int(_time.time()*1000)}) + "\n")
-    except Exception:
-        pass
-    # #endregion
     logger.info("Admin %s sent reminder email for %s (%s)", email, registration_id, message_id)
     return {"ok": True, "email_id": message_id, "to": reg["email"]}
 
@@ -1133,6 +1341,265 @@ async def admin_clear_certificates(
     deleted = await _cascade_delete_registrations(ids)
     logger.info("Admin %s cleared paid certificate registrations: %s", email, deleted)
     return {"ok": True, "deleted": deleted}
+
+
+# ============================================================
+# Admin Interns roster (independent of registrations / payments)
+# ============================================================
+@api.get("/admin/interns")
+async def admin_list_interns(
+    email: str = Depends(require_admin),
+    search: Optional[str] = None,
+):
+    q = {}
+    if search:
+        s = search.strip()
+        if s:
+            q["$or"] = [
+                {"intern_id": {"$regex": s, "$options": "i"}},
+                {"full_name": {"$regex": s, "$options": "i"}},
+                {"email": {"$regex": s, "$options": "i"}},
+                {"mobile": {"$regex": s, "$options": "i"}},
+                {"college": {"$regex": s, "$options": "i"}},
+                {"internship_type": {"$regex": s, "$options": "i"}},
+            ]
+    # No artificial import/list cap — return full roster
+    docs = await db.interns.find(q).sort("created_at", -1).to_list(1_000_000)
+    return [clean(d) for d in docs]
+
+
+@api.get("/admin/interns/template")
+async def admin_interns_template(email: str = Depends(require_admin)):
+    return Response(
+        content=_intern_template_csv(),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="veritech-interns-template.csv"'},
+    )
+
+
+@api.post("/admin/interns/import")
+async def admin_interns_import(
+    file: UploadFile = File(...),
+    email: str = Depends(require_admin),
+):
+    filename = file.filename or ""
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(400, "Uploaded file is empty")
+
+    parsed_rows, source_label = _parse_intern_upload(filename, raw)
+    if not parsed_rows:
+        raise HTTPException(400, "No data rows found in the file")
+
+    first_headers = list(parsed_rows[0].keys())
+    header_map = {_normalize_intern_csv_header(h): h for h in first_headers if h}
+    for row in parsed_rows[1:]:
+        for h in row.keys():
+            norm = _normalize_intern_csv_header(h)
+            if norm and norm not in header_map:
+                header_map[norm] = h
+
+    existing = await db.interns.find({}).to_list(1_000_000)
+    by_email = {
+        str(d.get("email") or "").strip().lower(): d
+        for d in existing
+        if str(d.get("email") or "").strip() and d.get("is_valid", True)
+    }
+
+    imported = 0
+    updated = 0
+    skipped = 0
+    invalid_count = 0
+    errors: list[dict] = []
+    seen_in_file: set[str] = set()
+
+    for index, row in enumerate(parsed_rows, start=2):
+        def cell(col: str) -> str:
+            raw_key = header_map.get(col)
+            if not raw_key:
+                return ""
+            return _intern_cell_str(row.get(raw_key))
+
+        full_name = cell("full_name")
+        intern_email = cell("email").lower()
+        mobile = cell("mobile")
+        college = cell("college")
+        course = cell("course")
+        branch = cell("branch")
+        graduation_year = cell("graduation_year")
+        internship_type = cell("internship_type")
+
+        # Skip only completely blank lines
+        if not any([full_name, intern_email, mobile, college, course, branch, graduation_year, internship_type]):
+            skipped += 1
+            continue
+
+        field_errors, invalid_fields = _intern_field_errors(full_name, intern_email, mobile)
+        if intern_email and intern_email in seen_in_file:
+            field_errors = [*field_errors, f"Duplicate email in file ({intern_email})"]
+            if "email" not in invalid_fields:
+                invalid_fields = [*invalid_fields, "email"]
+        if intern_email:
+            seen_in_file.add(intern_email)
+
+        is_valid = len(field_errors) == 0
+        if not is_valid:
+            invalid_count += 1
+            errors.append({"row": index, "message": "; ".join(field_errors)})
+
+        now = now_iso()
+        payload = {
+            "full_name": full_name,
+            "email": intern_email,
+            "mobile": mobile,
+            "college": college,
+            "course": course,
+            "branch": branch,
+            "graduation_year": graduation_year,
+            "internship_type": internship_type,
+            "source": source_label,
+            "is_valid": is_valid,
+            "validation_errors": field_errors,
+            "invalid_fields": invalid_fields,
+            "updated_at": now,
+        }
+
+        # Upsert only when email is valid and already on roster
+        existing_doc = by_email.get(intern_email) if is_valid and intern_email else None
+        if existing_doc:
+            intern_id = existing_doc.get("intern_id") or existing_doc.get("_id")
+            await db.interns.update_one({"intern_id": intern_id}, {"$set": payload})
+            updated += 1
+            by_email[intern_email] = {**existing_doc, **payload, "intern_id": intern_id}
+        else:
+            intern_id = await next_intern_id()
+            doc = {
+                **payload,
+                "intern_id": intern_id,
+                "_id": intern_id,
+                "created_at": now,
+            }
+            await db.interns.insert_one(doc)
+            imported += 1
+            if is_valid and intern_email:
+                by_email[intern_email] = doc
+
+    logger.info(
+        "Admin %s imported interns (%s): imported=%s updated=%s skipped=%s invalid=%s",
+        email, source_label, imported, updated, skipped, invalid_count,
+    )
+    return {
+        "ok": True,
+        "imported": imported,
+        "updated": updated,
+        "skipped": skipped,
+        "invalid_count": invalid_count,
+        "errors": errors[:200],
+        "error_count": len(errors),
+        "format": source_label,
+    }
+
+
+@api.patch("/admin/interns/{intern_id}")
+async def admin_update_intern(
+    intern_id: str,
+    body: InternUpdateRequest,
+    email: str = Depends(require_admin),
+):
+    intern = await db.interns.find_one({"intern_id": intern_id})
+    if not intern:
+        raise HTTPException(404, "Intern not found")
+
+    updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    if "email" in updates:
+        updates["email"] = str(updates["email"]).strip().lower()
+    for key in ("full_name", "mobile", "college", "course", "branch", "graduation_year", "internship_type"):
+        if key in updates:
+            updates[key] = str(updates[key]).strip()
+
+    merged = {**intern, **updates}
+    field_errors, invalid_fields = _intern_field_errors(
+        merged.get("full_name") or "",
+        merged.get("email") or "",
+        merged.get("mobile") or "",
+    )
+    updates.update({
+        "is_valid": len(field_errors) == 0,
+        "validation_errors": field_errors,
+        "invalid_fields": invalid_fields,
+        "updated_at": now_iso(),
+    })
+    await db.interns.update_one({"intern_id": intern_id}, {"$set": updates})
+    updated = await db.interns.find_one({"intern_id": intern_id})
+    return clean(updated)
+
+
+@api.post("/admin/interns/bulk-delete")
+async def admin_interns_bulk_delete(
+    body: InternBulkDeleteRequest,
+    email: str = Depends(require_admin),
+):
+    ids = [str(i).strip() for i in body.intern_ids if str(i).strip()]
+    if not ids:
+        raise HTTPException(400, "No intern IDs provided")
+    deleted = await db.interns.delete_many_by_field("intern_id", ids)
+    logger.info("Admin %s bulk-deleted interns: %s", email, deleted)
+    return {"ok": True, "deleted": {"interns": deleted}}
+
+
+@api.post("/admin/interns/clear")
+async def admin_interns_clear(
+    body: ClearConfirmRequest,
+    email: str = Depends(require_admin),
+):
+    if body.confirm.strip().upper() != "DELETE":
+        raise HTTPException(400, "Type DELETE to confirm clearing all interns")
+    deleted = await db.interns.delete_all()
+    logger.info("Admin %s cleared all interns: %s", email, deleted)
+    return {"ok": True, "deleted": {"interns": deleted}}
+
+
+@api.post("/admin/interns/{intern_id}/send-invite")
+async def admin_send_intern_claim_invite(
+    intern_id: str,
+    email: str = Depends(require_admin),
+):
+    intern = await db.interns.find_one({"intern_id": intern_id})
+    if not intern:
+        raise HTTPException(404, "Intern not found")
+    if intern.get("is_valid") is False:
+        raise HTTPException(400, "Fix invalid fields (highlighted in red) before sending the invite")
+    if not intern.get("email"):
+        raise HTTPException(400, "This intern has no email address")
+
+    base = FRONTEND_URL.rstrip("/")
+    claim_url = f"{base}/register/{intern_id}"
+    status_url = f"{base}/status"
+    message_id = await send_intern_claim_invite_email(
+        intern,
+        claim_url=claim_url,
+        status_url=status_url,
+    )
+    if not message_id:
+        raise HTTPException(502, "Could not send the invitation email. Check email settings and try again.")
+
+    await db.interns.update_one(
+        {"intern_id": intern_id},
+        {"$set": {
+            "invite_email_sent_at": now_iso(),
+            "invite_email_id": message_id,
+            "updated_at": now_iso(),
+        }},
+    )
+    await db.audit_logs.insert_one({
+        "action": "intern_claim_invite_sent",
+        "intern_id": intern_id,
+        "admin_email": email,
+        "email_id": message_id,
+        "created_at": now_iso(),
+    })
+    logger.info("Admin %s sent claim invite for %s (%s)", email, intern_id, message_id)
+    return {"ok": True, "email_id": message_id, "to": intern["email"]}
 
 
 @api.get("/admin/failure-analytics")

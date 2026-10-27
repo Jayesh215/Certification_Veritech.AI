@@ -301,3 +301,100 @@ async def send_pending_reminder_email(reg: dict, *, cta_url: str = "") -> Option
     except Exception as e:
         logger.error("Resend reminder failed: %s", e)
         return None
+
+
+def _intern_claim_invite_html(intern: dict, *, claim_url: str, status_url: str) -> str:
+    claim = _esc(claim_url)
+    status = _esc(status_url)
+    return f"""
+    <table width="100%" cellspacing="0" cellpadding="0" style="background:#F8FAFC;padding:32px 0;font-family:Arial,sans-serif;">
+      <tr><td align="center">
+        <table width="600" cellspacing="0" cellpadding="0" style="background:#fff;border-radius:16px;border:1px solid #E2E8F0;overflow:hidden;">
+          <tr><td style="background:#0F172A;padding:24px;">
+            <div style="color:#fff;font-size:22px;font-weight:800;letter-spacing:-0.5px;">Veritech<span style="color:#3B82F6;">.AI</span></div>
+            <div style="color:#94A3B8;font-size:11px;font-weight:600;letter-spacing:2px;margin-top:6px;">CERTIFICATE CLAIM INVITE</div>
+          </td></tr>
+          <tr><td style="padding:32px 24px;">
+            <h1 style="margin:0 0 8px;font-size:22px;color:#0F172A;">Claim your internship certificate</h1>
+            <p style="margin:0 0 16px;color:#475569;font-size:14px;line-height:1.6;">
+              Hello <strong>{_esc(intern.get('full_name'))}</strong>, congratulations on successfully completing your
+              Veritech.AI internship. You are invited to claim your official certificate now.
+            </p>
+            <table width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #E2E8F0;border-radius:12px;margin-bottom:20px;">
+              <tr><td style="padding:14px 18px;color:#64748B;font-size:13px;">Intern ID</td>
+                  <td style="padding:14px 18px;color:#0F172A;font-size:13px;font-weight:700;text-align:right;">{_esc(intern.get('intern_id'))}</td></tr>
+              <tr><td style="padding:14px 18px;color:#64748B;font-size:13px;border-top:1px solid #F1F5F9;">Internship</td>
+                  <td style="padding:14px 18px;color:#0F172A;font-size:13px;font-weight:700;text-align:right;border-top:1px solid #F1F5F9;">{_esc(intern.get('internship_type') or '')}</td></tr>
+              <tr><td style="padding:14px 18px;color:#64748B;font-size:13px;border-top:1px solid #F1F5F9;">College</td>
+                  <td style="padding:14px 18px;color:#0F172A;font-size:13px;font-weight:700;text-align:right;border-top:1px solid #F1F5F9;">{_esc(intern.get('college') or '')}</td></tr>
+            </table>
+            <h2 style="margin:0 0 10px;font-size:16px;color:#0F172A;">Why claim your certificate</h2>
+            <ul style="margin:0 0 22px;padding-left:18px;color:#475569;font-size:14px;line-height:1.7;">
+              <li>Official proof you completed a Veritech.AI internship.</li>
+              <li>Includes a QR code employers can scan to verify authenticity.</li>
+              <li>Ready to add to your resume, LinkedIn, and campus placements.</li>
+            </ul>
+            <div style="text-align:center;">
+              <a href="{claim}" style="display:inline-block;background:#2563EB;color:#fff;text-decoration:none;font-size:14px;font-weight:700;padding:13px 24px;border-radius:12px;">
+                Claim your certificate
+              </a>
+            </div>
+            <p style="margin:16px 0 0;color:#64748B;font-size:12px;line-height:1.6;text-align:center;">
+              Registration link: <a href="{claim}" style="color:#2563EB;">{claim}</a><br/>
+              Track status anytime: <a href="{status}" style="color:#2563EB;">{status}</a>
+            </p>
+          </td></tr>
+          <tr><td style="background:#F8FAFC;padding:18px 24px;color:#94A3B8;font-size:11px;text-align:center;">
+            © 2026 Veritech.AI · AI • Software • Technology
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+    """
+
+
+def _intern_claim_invite_text(intern: dict, *, claim_url: str, status_url: str) -> str:
+    return (
+        f"Hello {intern.get('full_name') or ''},\n\n"
+        "Congratulations on successfully completing your Veritech.AI internship. "
+        "You are invited to claim your official certificate now.\n\n"
+        f"Intern ID: {intern.get('intern_id') or ''}\n"
+        f"Internship: {intern.get('internship_type') or ''}\n"
+        f"College: {intern.get('college') or ''}\n\n"
+        "Why claim your certificate:\n"
+        "- Official proof of your completed internship\n"
+        "- QR-verifiable by employers\n"
+        "- Ready for resume, LinkedIn, and campus placements\n\n"
+        f"Claim your certificate: {claim_url}\n"
+        f"Track status: {status_url}\n"
+    )
+
+
+async def send_intern_claim_invite_email(
+    intern: dict,
+    *,
+    claim_url: str = "",
+    status_url: str = "",
+) -> Optional[str]:
+    if not _configure_resend():
+        logger.info("Resend disabled — skipping claim invite for %s", intern.get("intern_id"))
+        return None
+    if not intern.get("email"):
+        return None
+
+    intern_id = intern.get("intern_id") or "intern"
+    params = {
+        "from": SENDER_EMAIL,
+        "to": [intern["email"]],
+        "subject": f"Claim your Veritech.AI internship certificate — {intern_id}",
+        "html": _intern_claim_invite_html(intern, claim_url=claim_url, status_url=status_url),
+        "text": _intern_claim_invite_text(intern, claim_url=claim_url, status_url=status_url),
+    }
+    try:
+        result = await asyncio.to_thread(resend.Emails.send, params)
+        eid = result.get("id") if isinstance(result, dict) else getattr(result, "id", None)
+        logger.info("Claim invite sent to %s (id=%s)", intern["email"], eid)
+        return eid
+    except Exception as e:
+        logger.error("Resend claim invite failed: %s", e)
+        return None

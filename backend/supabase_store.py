@@ -175,7 +175,12 @@ class Collection:
         if self.name == "audit_logs":
             doc_id = str(stored.get("_id") or uuid.uuid4())
         else:
-            doc_id = str(stored.get("_id") or stored.get("registration_id") or uuid.uuid4())
+            doc_id = str(
+                stored.get("_id")
+                or stored.get("intern_id")
+                or stored.get("registration_id")
+                or uuid.uuid4()
+            )
         stored.setdefault("_id", doc_id)
         await self.store.pool.execute(
             """

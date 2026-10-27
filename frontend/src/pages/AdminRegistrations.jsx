@@ -33,7 +33,11 @@ const StatusBadge = ({ s }) => {
 
 const getRowId = (r) => r.registration_id;
 
-export default function AdminRegistrations() {
+export default function AdminRegistrations({
+  title = "Registrations",
+  subtitle = "All intern registrations and their statuses.",
+  exportFilename = "veritech-registrations.csv",
+} = {}) {
   const periods = useInternshipPeriods();
   const [params] = useSearchParams();
   const q = params.get("q") || "";
@@ -112,21 +116,11 @@ export default function AdminRegistrations() {
     const id = row?.registration_id;
     if (!id || mailingId) return;
     setMailingId(id);
-    const path = `/admin/registrations/${encodeURIComponent(id)}/send-reminder`;
-    // #region agent log
-    fetch('http://127.0.0.1:7516/ingest/c28c4a9d-ffaa-4193-982c-356d4f7ca568',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'788dd8'},body:JSON.stringify({sessionId:'788dd8',runId:'post-fix',hypothesisId:'A',location:'AdminRegistrations.jsx:sendReminder',message:'reminder request start',data:{path,apiBase:API_BASE,status:row?.payment_status||null,hasId:Boolean(id)},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     try {
-      const { data } = await api.post(path);
-      // #region agent log
-      fetch('http://127.0.0.1:7516/ingest/c28c4a9d-ffaa-4193-982c-356d4f7ca568',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'788dd8'},body:JSON.stringify({sessionId:'788dd8',runId:'post-fix',hypothesisId:'A',location:'AdminRegistrations.jsx:sendReminder',message:'reminder request success',data:{path,ok:Boolean(data?.ok),hasEmailId:Boolean(data?.email_id)},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
+      const { data } = await api.post(`/admin/registrations/${encodeURIComponent(id)}/send-reminder`);
       toast.success(`Reminder sent to ${data?.to || row.email}`);
       await load();
     } catch (e) {
-      // #region agent log
-      fetch('http://127.0.0.1:7516/ingest/c28c4a9d-ffaa-4193-982c-356d4f7ca568',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'788dd8'},body:JSON.stringify({sessionId:'788dd8',runId:'post-fix',hypothesisId:'A',location:'AdminRegistrations.jsx:sendReminder',message:'reminder request failed',data:{path,apiBase:API_BASE,httpStatus:e?.response?.status??null,detail:e?.response?.data?.detail??null,fullUrl:e?.config?`${e.config.baseURL||''}${e.config.url||''}`:null},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       toast.error(e?.response?.data?.detail || "Could not send reminder email");
     } finally {
       setMailingId("");
@@ -137,11 +131,11 @@ export default function AdminRegistrations() {
     <div>
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">Registrations</h1>
-          <p className="mt-1 text-sm text-slate-500">All intern registrations and their statuses.</p>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">{title}</h1>
+          <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
         </div>
         <button
-          onClick={() => downloadCsv("/admin/registrations/export", "veritech-registrations.csv")}
+          onClick={() => downloadCsv("/admin/registrations/export", exportFilename)}
           className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3.5 py-2 text-sm font-semibold text-white hover:bg-slate-800 whitespace-nowrap"
           data-testid="export-registrations-csv"
         >
