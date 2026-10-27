@@ -1002,6 +1002,14 @@ async def admin_send_registration_reminder(
 
     cta_url = f"{FRONTEND_URL.rstrip('/')}/status?q={registration_id}"
     message_id = await send_pending_reminder_email(reg, cta_url=cta_url)
+    # #region agent log
+    try:
+        import json as _json, time as _time
+        with open(r"c:\Users\Jayesh\OneDrive\Documents\GitHub\Certification_Veritech.AI\.cursor\debug-788dd8.log", "a", encoding="utf-8") as _f:
+            _f.write(_json.dumps({"sessionId":"788dd8","runId":"post-fix","hypothesisId":"F","location":"server.py:admin_send_registration_reminder","message":"resend result","data":{"registration_id":registration_id,"has_message_id":bool(message_id),"status":status},"timestamp":int(_time.time()*1000)}) + "\n")
+    except Exception:
+        pass
+    # #endregion
     if not message_id:
         raise HTTPException(502, "Could not send the reminder email. Check email settings and try again.")
 
@@ -1020,6 +1028,14 @@ async def admin_send_registration_reminder(
         "email_id": message_id,
         "created_at": now_iso(),
     })
+    # #region agent log
+    try:
+        import json as _json, time as _time
+        with open(r"c:\Users\Jayesh\OneDrive\Documents\GitHub\Certification_Veritech.AI\.cursor\debug-788dd8.log", "a", encoding="utf-8") as _f:
+            _f.write(_json.dumps({"sessionId":"788dd8","runId":"post-fix","hypothesisId":"F","location":"server.py:admin_send_registration_reminder","message":"reminder audit saved","data":{"registration_id":registration_id,"ok":True},"timestamp":int(_time.time()*1000)}) + "\n")
+    except Exception:
+        pass
+    # #endregion
     logger.info("Admin %s sent reminder email for %s (%s)", email, registration_id, message_id)
     return {"ok": True, "email_id": message_id, "to": reg["email"]}
 

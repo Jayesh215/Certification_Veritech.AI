@@ -171,7 +171,11 @@ class Collection:
 
     async def insert_one(self, doc: dict) -> None:
         stored = dict(doc)
-        doc_id = str(stored.get("_id") or stored.get("registration_id") or uuid.uuid4())
+        # audit_logs are event rows — never key them by registration_id or repeats collide
+        if self.name == "audit_logs":
+            doc_id = str(stored.get("_id") or uuid.uuid4())
+        else:
+            doc_id = str(stored.get("_id") or stored.get("registration_id") or uuid.uuid4())
         stored.setdefault("_id", doc_id)
         await self.store.pool.execute(
             """
