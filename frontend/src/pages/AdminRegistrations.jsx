@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { Search, FileDown } from "lucide-react";
+import { Search, FileDown, Loader2, Mail } from "lucide-react";
 import { api, API_BASE, datesFor, durationWithDates, formatCurrency } from "../lib/api";
 import useInternshipPeriods from "../lib/useInternshipPeriods";
 import usePagination from "../lib/usePagination";
@@ -44,6 +44,7 @@ export default function AdminRegistrations() {
   const [status, setStatus] = useState("");
   const [duration, setDuration] = useState("");
   const [busy, setBusy] = useState(false);
+  const [mailingId, setMailingId] = useState("");
   const [clearOpen, setClearOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
@@ -107,6 +108,21 @@ export default function AdminRegistrations() {
     }
   };
 
+  const sendReminder = async (row) => {
+    const id = row?.registration_id;
+    if (!id || mailingId) return;
+    setMailingId(id);
+    try {
+      const { data } = await api.post(`/admin/registrations/${id}/send-reminder`);
+      toast.success(`Reminder sent to ${data?.to || row.email}`);
+      await load();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Could not send reminder email");
+    } finally {
+      setMailingId("");
+    }
+  };
+
   return (
     <div>
       <div className="mb-4 flex items-start justify-between gap-3">
@@ -159,7 +175,7 @@ export default function AdminRegistrations() {
       </div>
 
       {loading ? (
-        <TableSkeleton rows={8} cols={8} />
+        <TableSkeleton rows={8} cols={9} />
       ) : (
         <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
@@ -186,10 +202,14 @@ export default function AdminRegistrations() {
                   <th className="text-left px-4 py-3 font-semibold">Duration</th>
                   <th className="text-left px-4 py-3 font-semibold">Amount</th>
                   <th className="text-left px-4 py-3 font-semibold">Status</th>
+                  <th className="text-left px-4 py-3 font-semibold">Action</th>
                 </tr>
               </thead>
               <tbody>
-                {pagination.pageItems.map((r) => (
+                {pagination.pageItems.map((r) => {
+                  const canRemind = ["PENDING", "FAILED"].includes(String(r.payment_status || "").toUpperCase());
+                  const sending = mailingId === r.registration_id;
+                  return (
                   <tr key={r.registration_id} className="border-b border-slate-100 hover:bg-slate-50/60" data-testid={`row-${r.registration_id}`}>
                     <td className="px-4 py-3">
                       <input
@@ -207,10 +227,27 @@ export default function AdminRegistrations() {
                     <td className="px-4 py-3">{durationWithDates(r.duration_months, datesFor(periods, r.duration_months, r).start, datesFor(periods, r.duration_months, r).end)}</td>
                     <td className="px-4 py-3 font-mono-tabular">{formatCurrency(r.amount)}</td>
                     <td className="px-4 py-3"><StatusBadge s={r.payment_status} /></td>
+                    <td className="px-4 py-3">
+                      {canRemind ? (
+                        <button
+                          type="button"
+                          onClick={() => sendReminder(r)}
+                          disabled={Boolean(mailingId) || busy}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          data-testid={`send-reminder-${r.registration_id}`}
+                        >
+                          {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
+                          {sending ? "Sending…" : "Send email"}
+                        </button>
+                      ) : (
+                        <span className="text-xs text-slate-400">—</span>
+                      )}
+                    </td>
                   </tr>
-                ))}
+                  );
+                })}
                 {rows.length === 0 && (
-                  <tr><td colSpan={8} className="px-4 py-16 text-center text-sm text-slate-500">No registrations found</td></tr>
+                  <tr><td colSpan={9} className="px-4 py-16 text-center text-sm text-slate-500">No registrations found</td></tr>
                 )}
               </tbody>
             </table>

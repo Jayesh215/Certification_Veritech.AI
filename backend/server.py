@@ -32,7 +32,7 @@ from starlette.middleware.cors import CORSMiddleware
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
-from email_service import send_payment_success_email
+from email_service import send_payment_success_email, send_pending_reminder_email
 
 JWT_SECRET = os.environ["JWT_SECRET"]
 RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "rzp_test_REPLACE_ME")
@@ -984,6 +984,44 @@ async def admin_registrations(
         q["internship_type"] = internship_type
     docs = await db.registrations.find(q).sort("created_at", -1).to_list(500)
     return [clean(d) for d in docs]
+
+
+@api.post("/admin/registrations/{registration_id}/send-reminder")
+async def admin_send_registration_reminder(
+    registration_id: str,
+    email: str = Depends(require_admin),
+):
+    reg = await db.registrations.find_one({"registration_id": registration_id})
+    if not reg:
+        raise HTTPException(404, "Registration not found")
+    status = str(reg.get("payment_status") or "").upper()
+    if status not in ("PENDING", "FAILED"):
+        raise HTTPException(400, "Reminder emails are only available for pending or failed payments")
+    if not reg.get("email"):
+        raise HTTPException(400, "This registration has no email address")
+
+    cta_url = f"{FRONTEND_URL.rstrip('/')}/status?q={registration_id}"
+    message_id = await send_pending_reminder_email(reg, cta_url=cta_url)
+    if not message_id:
+        raise HTTPException(502, "Could not send the reminder email. Check email settings and try again.")
+
+    await db.registrations.update_one(
+        {"registration_id": registration_id},
+        {"$set": {
+            "reminder_email_sent_at": now_iso(),
+            "reminder_email_id": message_id,
+            "updated_at": now_iso(),
+        }},
+    )
+    await db.audit_logs.insert_one({
+        "action": "reminder_email_sent",
+        "registration_id": registration_id,
+        "admin_email": email,
+        "email_id": message_id,
+        "created_at": now_iso(),
+    })
+    logger.info("Admin %s sent reminder email for %s (%s)", email, registration_id, message_id)
+    return {"ok": True, "email_id": message_id, "to": reg["email"]}
 
 
 async def _cascade_delete_registrations(registration_ids: list[str]) -> dict:
