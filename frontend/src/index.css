@@ -229,6 +229,25 @@ html, body {
   background-color: #DBEAFE;
 }
 
+/* Alumni review marquees on the landing page */
+.alumni-marquee {
+  mask-image: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
+}
+.alumni-marquee-track {
+  animation: alumni-marquee-scroll var(--alumni-marquee-duration, 80s) linear infinite;
+}
+.alumni-marquee-reverse {
+  animation-direction: reverse;
+}
+.alumni-marquee-slow {
+  animation-duration: var(--alumni-marquee-duration, 55s);
+}
+@keyframes alumni-marquee-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .vt-anim-up, .vt-anim-in {
     animation: none !important;
@@ -244,6 +263,7 @@ html, body {
   }
   .vt-lift { transition: none; }
   .vt-cta::after { display: none; }
+  .alumni-marquee-track { animation: none !important; }
 }
 
 /* Focus ring */

@@ -454,6 +454,14 @@ class DocumentStore:
             )
             """
         )
+        # PostgREST exposes public tables. Enable RLS with no anon/authenticated
+        # policies so only the direct Postgres connection (this app) can use it.
+        await self.pool.execute(
+            "ALTER TABLE public.app_documents ENABLE ROW LEVEL SECURITY"
+        )
+        await self.pool.execute(
+            "REVOKE ALL ON TABLE public.app_documents FROM anon, authenticated"
+        )
         # Expression indexes for hot lookup paths used during registration + payment.
         await self.pool.execute(
             """

@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { motion, useReducedMotion } from "framer-motion";
 import { ArrowRight, BadgeCheck, Briefcase, FileCheck, QrCode, ScanSearch, Share2 } from "lucide-react";
 import { Logo } from "../components/Logo";
+import AlumniReviews from "../components/AlumniReviews";
 
 function Rise({ y = 60, delay = 0, trigger = "view", damping = 60, mass = 1, className = "", children }) {
   const reduce = useReducedMotion();
@@ -99,13 +100,6 @@ export default function Landing() {
           </nav>
           <div className="flex items-center gap-2">
             <Link
-              to="/admin/login"
-              data-testid="nav-admin-link"
-              className="hidden rounded-xl px-3 py-2 text-sm font-medium text-slate-500 hover:text-slate-900 sm:inline-flex"
-            >
-              Admin
-            </Link>
-            <Link
               to="/register"
               className="inline-flex items-center rounded-xl bg-[#2563EB] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1D4ED8]"
             >
@@ -129,52 +123,57 @@ export default function Landing() {
       </header>
 
       <main>
-        <section className="mx-auto grid max-w-6xl items-center gap-12 px-5 py-16 lg:grid-cols-2 lg:py-24">
+        <section className="mx-auto grid max-w-6xl items-start gap-10 px-5 py-8 lg:grid-cols-2 lg:gap-12 lg:py-12">
           <div>
             <Rise y={40} delay={0.1} trigger="mount">
               <p className="inline-flex rounded-xl bg-[#EFF6FF] px-3 py-1 text-sm font-semibold text-[#2563EB]">
                 For Veritech.AI interns
               </p>
             </Rise>
-            <Rise y={60} delay={0.2} trigger="mount" className="mt-5">
-              <h1 className="text-4xl font-semibold leading-[1.1] tracking-tight text-[#0F172A] sm:text-5xl lg:text-6xl">
+            <Rise y={60} delay={0.2} trigger="mount" className="mt-4">
+              <h1 className="text-3xl font-semibold leading-[1.15] tracking-tight text-[#0F172A] sm:text-4xl lg:text-[2.5rem] lg:leading-[1.15]">
                 Your internship certificate, ready to show employers.
               </h1>
             </Rise>
-            <Rise y={80} delay={0.3} trigger="mount" className="mt-5">
-              <p className="max-w-xl text-lg leading-relaxed text-slate-500">
+            <Rise y={80} delay={0.3} trigger="mount" className="mt-4">
+              <p className="max-w-xl text-base leading-relaxed text-slate-500">
                 Veritech.AI issues internship certificates to its interns. Register your details here and download a certificate with your name, role, dates, and a QR code you can add to a resume.
               </p>
             </Rise>
             <Rise y={60} delay={0.4} trigger="mount" className="mt-8">
-            <div className="flex flex-wrap gap-3">
-              <Link
-                to="/register"
-                className="inline-flex items-center gap-2 rounded-xl bg-[#2563EB] px-5 py-3 text-sm font-semibold text-white hover:bg-[#1D4ED8]"
-                data-testid="hero-start-registration-btn"
-              >
-                Start Registration <ArrowRight className="h-4 w-4" />
-              </Link>
-              <Link
-                to="/status"
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-50"
-                data-testid="hero-track-status-btn"
-              >
-                Track Application
-              </Link>
-            </div>
+              <div className="flex flex-wrap gap-3">
+                <Link
+                  to="/register"
+                  className="inline-flex items-center gap-2 rounded-xl bg-[#2563EB] px-5 py-3 text-sm font-semibold text-white hover:bg-[#1D4ED8]"
+                  data-testid="hero-start-registration-btn"
+                >
+                  Start Registration <ArrowRight className="h-4 w-4" />
+                </Link>
+                <Link
+                  to="/status"
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                  data-testid="hero-track-status-btn"
+                >
+                  Track Application
+                </Link>
+              </div>
+            </Rise>
+            <Rise y={40} delay={0.55} trigger="mount" className="mt-8 max-w-xl text-left">
+              <p className="text-sm font-semibold text-[#0F172A]">Employers can verify it</p>
+              <p className="mt-1 text-sm leading-relaxed text-slate-500">
+                A QR code confirms this certificate was issued to a Veritech.AI intern.
+              </p>
             </Rise>
           </div>
-          <Rise y={150} delay={0.6} trigger="mount" damping={80} mass={2} className="relative">
-            <img
+          <Rise y={120} delay={0.5} trigger="mount" damping={80} mass={2} className="mx-auto w-full max-w-[420px] lg:ml-auto lg:mr-0">
+            <motion.img
               src="/certificate-preview.png"
               alt="Veritech.AI internship certificate"
-              className="max-h-[640px] w-full rounded-[20px] border border-slate-100 bg-white object-contain shadow-[0_24px_60px_-28px_rgba(15,23,42,0.35)]"
+              className="mx-auto max-h-[460px] w-full rounded-[20px] border border-slate-100 bg-white object-contain shadow-[0_24px_60px_-28px_rgba(15,23,42,0.35)]"
+              initial={{ opacity: 0, scale: 0.96, y: 24 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              transition={{ type: "spring", stiffness: 420, damping: 34, delay: 0.45 }}
             />
-            <div className="absolute -left-3 bottom-8 hidden max-w-[220px] rounded-[20px] border border-slate-100 bg-white p-4 shadow-lg sm:block">
-              <p className="text-sm font-semibold">Employers can verify it</p>
-              <p className="mt-1 text-xs leading-relaxed text-slate-500">A QR code confirms this certificate was issued to a Veritech.AI intern.</p>
-            </div>
           </Rise>
         </section>
 
@@ -215,6 +214,8 @@ export default function Landing() {
             </div>
           </div>
         </section>
+
+        <AlumniReviews />
 
         <section className="px-5 py-20">
           <Rise y={60} delay={0.2} className="mx-auto grid max-w-6xl items-center gap-8 overflow-hidden rounded-[20px] bg-[#2563EB] px-6 py-10 text-white lg:grid-cols-[1.2fr_1fr] lg:px-12">

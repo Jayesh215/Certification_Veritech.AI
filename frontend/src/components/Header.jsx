@@ -31,13 +31,6 @@ export default function Header() {
             </Link>
           ))}
         </nav>
-        <Link
-          to="/admin/login"
-          className="rounded-full bg-slate-900 px-3.5 py-2 text-xs font-semibold text-white hover:bg-slate-800 transition-colors"
-          data-testid="nav-admin-link"
-        >
-          Admin
-        </Link>
       </div>
     </header>
   );
