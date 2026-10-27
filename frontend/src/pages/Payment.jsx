@@ -39,7 +39,18 @@ export default function Payment() {
     setPlansLoading(true);
     api
       .get("/plans")
-      .then((r) => setPlans(Array.isArray(r.data) ? r.data : []))
+      .then((r) => {
+        const next = (Array.isArray(r.data) ? r.data : []).filter(
+          (plan) => Number(plan.duration_months) !== 0,
+        );
+        setPlans(next);
+        setSelected((current) => {
+          if (next.some((plan) => plan.duration_months === current)) return current;
+          return next.find((plan) => plan.duration_months === 3)?.duration_months
+            ?? next[0]?.duration_months
+            ?? 3;
+        });
+      })
       .catch(() => setPlans([]))
       .finally(() => setPlansLoading(false));
   }, []);
@@ -191,10 +202,10 @@ export default function Payment() {
         {plansLoading ? (
           <PlansSkeleton />
         ) : (
-        <div className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <div className="grid items-stretch gap-4 pt-4 md:grid-cols-2 xl:grid-cols-4">
           {plans.map((p) => {
             const active = selected === p.duration_months;
-            const key = p.duration_months === 0 ? "1d" : `${p.duration_months}m`;
+            const key = `${p.duration_months}m`;
             const perks = PLAN_PERKS[p.duration_months] || [];
             const popular = Boolean(p.popular);
             const career = p.duration_months === 3 || p.duration_months === 6;
@@ -203,9 +214,9 @@ export default function Payment() {
                 key={p.duration_months}
                 data-testid={`duration-card-${key}`}
                 onClick={() => setSelected(p.duration_months)}
-                className={`relative flex cursor-pointer flex-col rounded-[24px] border bg-white p-6 ${
+                className={`relative flex h-full cursor-pointer flex-col rounded-[24px] border bg-white p-6 pt-8 ${
                   career
-                    ? "border-blue-300 shadow-[0_24px_50px_-24px_rgba(37,99,235,0.55)] xl:-mt-2"
+                    ? "border-blue-300 shadow-[0_24px_50px_-24px_rgba(37,99,235,0.55)]"
                     : "border-slate-200/80 shadow-sm"
                 } ${active ? "ring-2 ring-slate-900" : ""}`}
               >
@@ -223,7 +234,7 @@ export default function Payment() {
                     )}
                   </div>
                 )}
-                <div className={career ? "-mx-6 -mt-6 mb-4 rounded-t-[24px] bg-gradient-to-b from-blue-50 via-white to-white px-6 pb-2 pt-8" : ""}>
+                <div className={career ? "-mx-6 -mt-8 mb-4 rounded-t-[24px] bg-gradient-to-b from-blue-50 via-white to-white px-6 pb-2 pt-8" : ""}>
                   <h2 className="text-lg font-semibold text-slate-900">{p.name}</h2>
                   {formatDateRange(p.start_date, p.end_date) && (
                     <p className="mt-1 text-xs font-semibold text-blue-600">{formatDateRange(p.start_date, p.end_date)}</p>

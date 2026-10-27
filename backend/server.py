@@ -96,7 +96,7 @@ CERTIFICATE_TYPES = [
     "Internship Certificate", "Internship Completion Certificate",
     "Training Certificate", "Other",
 ]
-DURATION_MONTHS = {0, 1, 2, 3, 6}  # 0 = "1 Day" express plan
+DURATION_MONTHS = {1, 2, 3, 6}
 
 
 class RegistrationCreate(BaseModel):
@@ -265,8 +265,6 @@ async def get_plan(duration_months: int) -> dict:
 # Startup - seed plans and admin
 # ============================================================
 DEFAULT_PLANS = [
-    {"name": "1 Day", "duration_months": 0, "price": 1, "currency": "INR",
-     "description": "Express same-day certificate", "is_active": True, "popular": False},
     {"name": "1 Month", "duration_months": 1, "price": 99, "currency": "INR",
      "description": "Official Veritech.AI Certificate", "is_active": True, "popular": False},
     {"name": "2 Months", "duration_months": 2, "price": 149, "currency": "INR",
@@ -297,6 +295,13 @@ async def startup():
         if not existing:
             plan_doc = {**plan, "created_at": now_iso(), "updated_at": now_iso()}
             await db.plans.insert_one(plan_doc)
+    # Hide the retired 1 Day plan from public pricing and new registrations.
+    await db.plans.update_one(
+        {"duration_months": 0},
+        {"$set": {"is_active": False, "updated_at": now_iso()}},
+    )
+    _PLANS_CACHE["at"] = 0.0
+    _PLANS_CACHE["value"] = None
     # Keep the configured admin account able to sign in with ADMIN_PASSWORD.
     existing_admin = await db.admin_users.find_one({"email": ADMIN_EMAIL})
     password_ok = False
@@ -362,6 +367,8 @@ async def list_plans():
     result = []
     for plan in plans:
         item = clean(plan)
+        if int(item.get("duration_months") or -1) not in DURATION_MONTHS:
+            continue
         slot = periods.get(str(item.get("duration_months"))) or {}
         item["start_date"] = slot.get("start_date") or ""
         item["end_date"] = slot.get("end_date") or ""
@@ -1800,23 +1807,13 @@ def _build_certificate_pdf(reg: dict, branding: Optional[dict] = None) -> bytes:
     for parts in paragraphs[1:]:
         y = _draw_rich_text(c, left, y - 0.22 * inch, parts, 11, text_width, 15, black)
 
-    issued = reg.get("paid_at") or reg.get("certificate_generated_at") or datetime.now(timezone.utc).isoformat()
-    try:
-        issued_dt = datetime.fromisoformat(str(issued).replace("Z", "+00:00"))
-        issued_label = issued_dt.strftime("%d %B %Y").upper()
-    except ValueError:
-        issued_label = datetime.now(timezone.utc).strftime("%d %B %Y").upper()
-
     y -= 0.45 * inch
-    c.setFillColor(black)
-    c.setFont("Helvetica-Bold", 11)
-    c.drawString(left, y, f"ISSUED DATE:  -  {issued_label}")
     c.setFont("Helvetica", 9)
     c.setFillColor(muted)
     meta = f"Registration ID: {reg.get('registration_id', '')}"
     if reg.get("certificate_number"):
         meta = f"Certificate No: {reg['certificate_number']}    {meta}"
-    c.drawString(left, y - 16, meta)
+    c.drawString(left, y, meta)
 
     sign_top = 2.55 * inch
     if branding and branding.get("signature_b64"):

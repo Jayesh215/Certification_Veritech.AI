@@ -194,7 +194,7 @@ export default function AdminCertificates() {
           data-testid="certificates-duration-filter"
         >
           <option value="">All durations</option>
-          {[0, 1, 2, 3, 6].map((months) => (
+          {[1, 2, 3, 6].map((months) => (
             <option key={months} value={months}>
               {formatDuration(months)}
             </option>

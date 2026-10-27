@@ -143,10 +143,10 @@ export default function AdminRegistrations() {
         </select>
         <select value={duration} onChange={(e) => setDuration(e.target.value)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm" data-testid="filter-duration">
           <option value="">All durations</option>
-          {[0, 1, 2, 3, 6].map((months) => {
+          {[1, 2, 3, 6].map((months) => {
             const slot = periods[String(months)] || {};
             const label = durationWithDates(months, slot.start_date, slot.end_date);
-            return <option key={months} value={months}>{months === 0 ? "1 Day" : label}</option>;
+            return <option key={months} value={months}>{label}</option>;
           })}
         </select>
         <ListBulkBar

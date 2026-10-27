@@ -8,9 +8,9 @@ import useInternshipPeriods from "../lib/useInternshipPeriods";
 
 const CERTIFICATE_TYPE = "Internship Completion Certificate";
 const YEARS = ["2026", "2027", "2028", "2029", "2030", "Other"];
-const DURATIONS = [0, 1, 2, 3, 6];
+const DURATIONS = [1, 2, 3, 6];
 const durationLabel = (months) =>
-  months === 0 ? "1 Day Certificate" : `${months} Month${months > 1 ? "s" : ""} Certificate`;
+  `${months} Month${months > 1 ? "s" : ""} Certificate`;
 const isCareerDuration = (months) => months === 3 || months === 6;
 
 const emptyForm = {
@@ -111,7 +111,7 @@ export default function Register() {
   const { state, update } = useRegistration();
   const [form, setForm] = useState(() => {
     const next = { ...emptyForm, ...(state.form || {}), certificate_type: CERTIFICATE_TYPE };
-    if (!DURATIONS.includes(next.duration_months)) next.duration_months = 3;
+    if (!DURATIONS.includes(Number(next.duration_months))) next.duration_months = 3;
     return next;
   });
   const [errors, setErrors] = useState({});

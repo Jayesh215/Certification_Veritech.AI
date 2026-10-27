@@ -11,7 +11,10 @@ export default function ComparePlansModal({ open, onClose, onSelect, selectedDur
   useEffect(() => {
     if (!open) return;
     setLoading(true);
-    api.get("/plans").then((r) => setPlans(r.data)).catch(() => {}).finally(() => setLoading(false));
+    api.get("/plans")
+      .then((r) => setPlans((Array.isArray(r.data) ? r.data : []).filter((plan) => Number(plan.duration_months) !== 0)))
+      .catch(() => {})
+      .finally(() => setLoading(false));
     const onEsc = (e) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onEsc);
     document.body.style.overflow = "hidden";

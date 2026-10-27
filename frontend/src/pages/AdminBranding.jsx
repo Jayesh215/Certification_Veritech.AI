@@ -121,7 +121,6 @@ function AuthImage({ src, token, alt }) {
 }
 
 const PERIODS = [
-  { months: "0", label: "1 Day" },
   { months: "1", label: "1 Month" },
   { months: "2", label: "2 Months" },
   { months: "3", label: "3 Months" },

@@ -128,11 +128,6 @@ export function linkedInCertificationUrl(reg) {
 // Perks shown on pricing cards. Keyed by duration_months.
 // 3M and 6M get the strongest career-value messaging.
 export const PLAN_PERKS = {
-  0: [
-    "Instant express certificate",
-    "Downloadable PDF with verification QR",
-    "Shareable on LinkedIn & resumes",
-  ],
   1: [
     "Official Veritech.AI certificate",
     "LinkedIn-ready credential",
@@ -168,9 +163,9 @@ export const PLAN_PERKS = {
 
 // Side-by-side comparison matrix. Each feature is tagged with the duration_months it ships in.
 export const COMPARISON_FEATURES = [
-  { label: "Official Veritech.AI certificate", in: [0, 1, 2, 3, 6] },
-  { label: "LinkedIn-ready credential", in: [0, 1, 2, 3, 6] },
-  { label: "Public QR-based verification page", in: [0, 1, 2, 3, 6] },
+  { label: "Official Veritech.AI certificate", in: [1, 2, 3, 6] },
+  { label: "LinkedIn-ready credential", in: [1, 2, 3, 6] },
+  { label: "Public QR-based verification page", in: [1, 2, 3, 6] },
   { label: "Extended internship record on your profile", in: [2] },
   { label: "Highlight your internship duration", in: [2] },
   { label: "Consider as a valid internship", in: [3] },
