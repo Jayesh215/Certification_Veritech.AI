@@ -244,6 +244,37 @@ export default function AdminInterns() {
     }
   };
 
+  const handleBulkEmail = async () => {
+    if (selection.selectedCount === 0 || busy) return;
+    const selectedRows = rows.filter((r) => selection.selectedIds.includes(r.intern_id));
+    const invalidSelected = selectedRows.filter((r) => r.is_valid === false).length;
+    if (invalidSelected === selectedRows.length) {
+      toast.error("Selected rows need fixes before email can be sent");
+      return;
+    }
+    setBusy(true);
+    try {
+      const { data } = await api.post("/admin/interns/bulk-send-invite", {
+        intern_ids: selection.selectedIds,
+      });
+      const parts = [
+        `${data.sent || 0} sent`,
+        `${data.skipped || 0} skipped`,
+        `${data.failed || 0} failed`,
+      ];
+      if ((data.sent || 0) > 0) {
+        toast.success(`Bulk email · ${parts.join(" · ")}`);
+      } else {
+        toast.error(`No emails sent · ${parts.join(" · ")}`);
+      }
+      await load(search);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Bulk email failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleBulkDelete = async () => {
     if (selection.selectedCount === 0) return;
     setBusy(true);
@@ -345,6 +376,8 @@ export default function AdminInterns() {
         <ListBulkBar
           selectedCount={selection.selectedCount}
           busy={busy}
+          onBulkEmail={handleBulkEmail}
+          emailLabel="Send / resend emails"
           onBulkDelete={() => setDeleteOpen(true)}
           onClearAll={() => setClearOpen(true)}
           testId="interns-bulk"

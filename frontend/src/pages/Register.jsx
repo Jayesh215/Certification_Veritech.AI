@@ -171,7 +171,10 @@ export default function Register() {
   return (
     <div className="mx-auto max-w-[1440px] px-4 py-4 sm:px-6 sm:py-6">
       <section className="rounded-[28px] bg-white p-6 shadow-sm sm:p-8">
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+        <p className="text-sm font-semibold text-blue-600 sm:text-base">
+          Get your internship certificate instantly
+        </p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
           Certificate registration
         </h1>
         <p className="mt-1 text-sm text-slate-500">Enter the details that should appear on your certificate.</p>

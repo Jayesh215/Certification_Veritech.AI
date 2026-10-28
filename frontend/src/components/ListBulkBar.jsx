@@ -1,4 +1,4 @@
-import { Loader2, Trash2, Eraser } from "lucide-react";
+import { Loader2, Trash2, Eraser, Mail } from "lucide-react";
 
 /**
  * Inline bulk actions — only rendered when at least one row is selected.
@@ -9,6 +9,8 @@ export default function ListBulkBar({
   busy = false,
   onBulkDelete,
   onClearAll,
+  onBulkEmail,
+  emailLabel = "Send / resend emails",
   testId = "list-bulk-bar",
 }) {
   if (selectedCount <= 0) return null;
@@ -18,6 +20,18 @@ export default function ListBulkBar({
       <span className="text-xs font-semibold text-slate-600 whitespace-nowrap">
         {selectedCount} selected
       </span>
+      {typeof onBulkEmail === "function" && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onBulkEmail}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-40"
+          data-testid={`${testId}-bulk-email`}
+        >
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
+          {emailLabel}
+        </button>
+      )}
       <button
         type="button"
         disabled={busy}

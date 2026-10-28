@@ -1559,16 +1559,11 @@ async def admin_interns_clear(
     return {"ok": True, "deleted": {"interns": deleted}}
 
 
-@api.post("/admin/interns/{intern_id}/send-invite")
-async def admin_send_intern_claim_invite(
-    intern_id: str,
-    email: str = Depends(require_admin),
-):
-    intern = await db.interns.find_one({"intern_id": intern_id})
-    if not intern:
-        raise HTTPException(404, "Intern not found")
+async def _send_one_intern_claim_invite(intern: dict, admin_email: str) -> dict:
+    """Send (or resend) claim invite for one intern. Returns result dict; raises HTTPException on hard fail."""
+    intern_id = intern.get("intern_id") or ""
     if intern.get("is_valid") is False:
-        raise HTTPException(400, "Fix invalid fields (highlighted in red) before sending the invite")
+        raise HTTPException(400, "Fix invalid fields before sending the invite")
     if not intern.get("email"):
         raise HTTPException(400, "This intern has no email address")
 
@@ -1594,12 +1589,96 @@ async def admin_send_intern_claim_invite(
     await db.audit_logs.insert_one({
         "action": "intern_claim_invite_sent",
         "intern_id": intern_id,
-        "admin_email": email,
+        "admin_email": admin_email,
         "email_id": message_id,
         "created_at": now_iso(),
     })
-    logger.info("Admin %s sent claim invite for %s (%s)", email, intern_id, message_id)
-    return {"ok": True, "email_id": message_id, "to": intern["email"]}
+    return {"ok": True, "email_id": message_id, "to": intern["email"], "intern_id": intern_id}
+
+
+@api.post("/admin/interns/{intern_id}/send-invite")
+async def admin_send_intern_claim_invite(
+    intern_id: str,
+    email: str = Depends(require_admin),
+):
+    intern = await db.interns.find_one({"intern_id": intern_id})
+    if not intern:
+        raise HTTPException(404, "Intern not found")
+    result = await _send_one_intern_claim_invite(intern, email)
+    logger.info("Admin %s sent claim invite for %s (%s)", email, intern_id, result.get("email_id"))
+    return result
+
+
+@api.post("/admin/interns/bulk-send-invite")
+async def admin_bulk_send_intern_claim_invite(
+    body: InternBulkDeleteRequest,
+    email: str = Depends(require_admin),
+):
+    ids = [str(i).strip() for i in body.intern_ids if str(i).strip()]
+    if not ids:
+        raise HTTPException(400, "No intern IDs provided")
+
+    sent = 0
+    skipped = 0
+    failed = 0
+    details: list[dict] = []
+
+    for intern_id in ids:
+        intern = await db.interns.find_one({"intern_id": intern_id})
+        if not intern:
+            failed += 1
+            details.append({"intern_id": intern_id, "status": "failed", "message": "Intern not found"})
+            continue
+        if intern.get("is_valid") is False:
+            skipped += 1
+            details.append({
+                "intern_id": intern_id,
+                "status": "skipped",
+                "message": "Invalid fields — fix before sending",
+            })
+            continue
+        if not intern.get("email"):
+            skipped += 1
+            details.append({
+                "intern_id": intern_id,
+                "status": "skipped",
+                "message": "Missing email",
+            })
+            continue
+        try:
+            result = await _send_one_intern_claim_invite(intern, email)
+            sent += 1
+            details.append({
+                "intern_id": intern_id,
+                "status": "sent",
+                "to": result.get("to"),
+            })
+        except HTTPException as exc:
+            failed += 1
+            details.append({
+                "intern_id": intern_id,
+                "status": "failed",
+                "message": str(exc.detail),
+            })
+        except Exception as exc:
+            failed += 1
+            details.append({
+                "intern_id": intern_id,
+                "status": "failed",
+                "message": str(exc),
+            })
+
+    logger.info(
+        "Admin %s bulk claim invites: sent=%s skipped=%s failed=%s",
+        email, sent, skipped, failed,
+    )
+    return {
+        "ok": True,
+        "sent": sent,
+        "skipped": skipped,
+        "failed": failed,
+        "details": details[:200],
+    }
 
 
 @api.get("/admin/failure-analytics")
