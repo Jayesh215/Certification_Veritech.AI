@@ -1210,14 +1210,8 @@ async def admin_registrations(
     return [clean(d) for d in docs]
 
 
-@api.post("/admin/registrations/{registration_id}/send-reminder")
-async def admin_send_registration_reminder(
-    registration_id: str,
-    email: str = Depends(require_admin),
-):
-    reg = await db.registrations.find_one({"registration_id": registration_id})
-    if not reg:
-        raise HTTPException(404, "Registration not found")
+async def _send_one_registration_reminder(reg: dict, admin_email: str) -> dict:
+    registration_id = reg.get("registration_id") or ""
     status = str(reg.get("payment_status") or "").upper()
     if status not in ("PENDING", "FAILED"):
         raise HTTPException(400, "Reminder emails are only available for pending or failed payments")
@@ -1229,23 +1223,117 @@ async def admin_send_registration_reminder(
     if not message_id:
         raise HTTPException(502, "Could not send the reminder email. Check email settings and try again.")
 
+    try:
+        prev_count = int(reg.get("reminder_email_count") or 0)
+    except (TypeError, ValueError):
+        prev_count = 0
+    next_count = prev_count + 1
+
     await db.registrations.update_one(
         {"registration_id": registration_id},
         {"$set": {
             "reminder_email_sent_at": now_iso(),
             "reminder_email_id": message_id,
+            "reminder_email_count": next_count,
             "updated_at": now_iso(),
         }},
     )
     await db.audit_logs.insert_one({
         "action": "reminder_email_sent",
         "registration_id": registration_id,
-        "admin_email": email,
+        "admin_email": admin_email,
         "email_id": message_id,
+        "reminder_email_count": next_count,
         "created_at": now_iso(),
     })
-    logger.info("Admin %s sent reminder email for %s (%s)", email, registration_id, message_id)
-    return {"ok": True, "email_id": message_id, "to": reg["email"]}
+    return {
+        "ok": True,
+        "email_id": message_id,
+        "to": reg["email"],
+        "registration_id": registration_id,
+        "reminder_email_count": next_count,
+    }
+
+
+@api.post("/admin/registrations/{registration_id}/send-reminder")
+async def admin_send_registration_reminder(
+    registration_id: str,
+    email: str = Depends(require_admin),
+):
+    reg = await db.registrations.find_one({"registration_id": registration_id})
+    if not reg:
+        raise HTTPException(404, "Registration not found")
+    result = await _send_one_registration_reminder(reg, email)
+    logger.info(
+        "Admin %s sent reminder email for %s (%s)",
+        email, registration_id, result.get("email_id"),
+    )
+    return result
+
+
+@api.post("/admin/registrations/bulk-send-reminder")
+async def admin_bulk_send_registration_reminder(
+    body: BulkDeleteRequest,
+    email: str = Depends(require_admin),
+):
+    ids = [str(i).strip() for i in body.registration_ids if str(i).strip()]
+    if not ids:
+        raise HTTPException(400, "No registration IDs provided")
+
+    sent = 0
+    skipped = 0
+    failed = 0
+    details: list[dict] = []
+
+    for registration_id in ids:
+        reg = await db.registrations.find_one({"registration_id": registration_id})
+        if not reg:
+            failed += 1
+            details.append({"registration_id": registration_id, "status": "failed", "message": "Not found"})
+            continue
+        status = str(reg.get("payment_status") or "").upper()
+        if status not in ("PENDING", "FAILED"):
+            skipped += 1
+            details.append({
+                "registration_id": registration_id,
+                "status": "skipped",
+                "message": f"Status is {status or 'unknown'}",
+            })
+            continue
+        try:
+            result = await _send_one_registration_reminder(reg, email)
+            sent += 1
+            details.append({
+                "registration_id": registration_id,
+                "status": "sent",
+                "to": result.get("to"),
+            })
+        except HTTPException as exc:
+            failed += 1
+            details.append({
+                "registration_id": registration_id,
+                "status": "failed",
+                "message": str(exc.detail),
+            })
+        except Exception as exc:
+            failed += 1
+            details.append({
+                "registration_id": registration_id,
+                "status": "failed",
+                "message": str(exc),
+            })
+
+    logger.info(
+        "Admin %s bulk reminders: sent=%s skipped=%s failed=%s",
+        email, sent, skipped, failed,
+    )
+    return {
+        "ok": True,
+        "sent": sent,
+        "skipped": skipped,
+        "failed": failed,
+        "details": details[:200],
+    }
 
 
 async def _cascade_delete_registrations(registration_ids: list[str]) -> dict:
@@ -1578,11 +1666,18 @@ async def _send_one_intern_claim_invite(intern: dict, admin_email: str) -> dict:
     if not message_id:
         raise HTTPException(502, "Could not send the invitation email. Check email settings and try again.")
 
+    try:
+        prev_count = int(intern.get("invite_email_count") or 0)
+    except (TypeError, ValueError):
+        prev_count = 0
+    next_count = prev_count + 1
+
     await db.interns.update_one(
         {"intern_id": intern_id},
         {"$set": {
             "invite_email_sent_at": now_iso(),
             "invite_email_id": message_id,
+            "invite_email_count": next_count,
             "updated_at": now_iso(),
         }},
     )
@@ -1591,9 +1686,16 @@ async def _send_one_intern_claim_invite(intern: dict, admin_email: str) -> dict:
         "intern_id": intern_id,
         "admin_email": admin_email,
         "email_id": message_id,
+        "invite_email_count": next_count,
         "created_at": now_iso(),
     })
-    return {"ok": True, "email_id": message_id, "to": intern["email"], "intern_id": intern_id}
+    return {
+        "ok": True,
+        "email_id": message_id,
+        "to": intern["email"],
+        "intern_id": intern_id,
+        "invite_email_count": next_count,
+    }
 
 
 @api.post("/admin/interns/{intern_id}/send-invite")

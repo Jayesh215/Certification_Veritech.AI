@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Search, FileDown, Loader2, Mail } from "lucide-react";
@@ -11,6 +11,7 @@ import ListPagination from "../components/ListPagination";
 import ListBulkBar from "../components/ListBulkBar";
 import ClearDataModal from "../components/ClearDataModal";
 import ConfirmDeleteModal from "../components/ConfirmDeleteModal";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../components/ui/tooltip";
 
 async function downloadCsv(path, filename) {
   const token = localStorage.getItem("veritech_admin_token");
@@ -28,8 +29,50 @@ const StatusBadge = ({ s }) => {
     PENDING: "bg-amber-50 text-amber-700 border-amber-200",
     FAILED: "bg-red-50 text-red-700 border-red-200",
   };
-  return <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold ${map[s] || map.PENDING}`}>{s}</span>;
+  return <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold whitespace-nowrap ${map[s] || map.PENDING}`}>{s}</span>;
 };
+
+function TruncateText({ children, className = "", maxClass = "max-w-[11rem]" }) {
+  const text = children == null || children === "" ? "—" : String(children);
+  const textRef = useRef(null);
+  const [truncated, setTruncated] = useState(false);
+
+  useEffect(() => {
+    const el = textRef.current;
+    if (!el) {
+      setTruncated(false);
+      return undefined;
+    }
+    const measure = () => {
+      setTruncated(el.scrollWidth > el.clientWidth + 1);
+    };
+    measure();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    ro?.observe(el);
+    window.addEventListener("resize", measure);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [text, maxClass, className]);
+
+  const content = (
+    <span ref={textRef} className={`block ${maxClass} truncate whitespace-nowrap ${className}`}>
+      {text}
+    </span>
+  );
+  if (text === "—" || !truncated) return content;
+  return (
+    <Tooltip delayDuration={200}>
+      <TooltipTrigger asChild>
+        <span className="block min-w-0 cursor-default">{content}</span>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="break-words">
+        {text}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 const getRowId = (r) => r.registration_id;
 
@@ -127,7 +170,38 @@ export default function AdminRegistrations({
     }
   };
 
+  const handleBulkEmail = async () => {
+    if (selection.selectedCount === 0 || busy || mailingId) return;
+    const selectedRows = rows.filter((r) => selection.selectedIds.includes(r.registration_id));
+    const canSend = selectedRows.filter((r) =>
+      ["PENDING", "FAILED"].includes(String(r.payment_status || "").toUpperCase()),
+    );
+    if (canSend.length === 0) {
+      toast.error("Select pending or failed registrations to send reminders");
+      return;
+    }
+    setBusy(true);
+    try {
+      const { data } = await api.post("/admin/registrations/bulk-send-reminder", {
+        registration_ids: selection.selectedIds,
+      });
+      const parts = [
+        `${data.sent || 0} sent`,
+        `${data.skipped || 0} skipped`,
+        `${data.failed || 0} failed`,
+      ];
+      if ((data.sent || 0) > 0) toast.success(`Bulk email · ${parts.join(" · ")}`);
+      else toast.error(`No emails sent · ${parts.join(" · ")}`);
+      await load();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Bulk email failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
+    <TooltipProvider delayDuration={200}>
     <div>
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
@@ -171,7 +245,9 @@ export default function AdminRegistrations({
         </select>
         <ListBulkBar
           selectedCount={selection.selectedCount}
-          busy={busy}
+          busy={busy || Boolean(mailingId)}
+          onBulkEmail={handleBulkEmail}
+          emailLabel="Send / resend emails"
           onBulkDelete={() => setDeleteOpen(true)}
           onClearAll={() => setClearOpen(true)}
           testId="registrations-bulk"
@@ -179,14 +255,14 @@ export default function AdminRegistrations({
       </div>
 
       {loading ? (
-        <TableSkeleton rows={8} cols={9} />
+        <TableSkeleton rows={8} cols={10} />
       ) : (
         <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
-            <table className="admin-data-table w-full text-sm">
+            <table className="admin-data-table w-full text-sm table-fixed">
               <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase tracking-wider text-slate-500">
                 <tr>
-                  <th className="px-4 py-3 w-10">
+                  <th className="px-3 py-3 w-10">
                     <input
                       type="checkbox"
                       checked={selection.allPageSelected}
@@ -199,23 +275,30 @@ export default function AdminRegistrations({
                       aria-label="Select page"
                     />
                   </th>
-                  <th className="text-left px-4 py-3 font-semibold">Reg. ID</th>
-                  <th className="text-left px-4 py-3 font-semibold">Name</th>
-                  <th className="text-left px-4 py-3 font-semibold">Email</th>
-                  <th className="text-left px-4 py-3 font-semibold">Internship</th>
-                  <th className="text-left px-4 py-3 font-semibold">Duration</th>
-                  <th className="text-left px-4 py-3 font-semibold">Amount</th>
-                  <th className="text-left px-4 py-3 font-semibold">Status</th>
-                  <th className="text-left px-4 py-3 font-semibold">Action</th>
+                  <th className="text-left px-3 py-3 font-semibold whitespace-nowrap w-[8.5rem]">Reg. ID</th>
+                  <th className="text-left px-3 py-3 font-semibold whitespace-nowrap">Name</th>
+                  <th className="text-left px-3 py-3 font-semibold whitespace-nowrap">Email</th>
+                  <th className="text-left px-3 py-3 font-semibold whitespace-nowrap">Internship</th>
+                  <th className="text-left px-3 py-3 font-semibold whitespace-nowrap w-[11rem]">Duration</th>
+                  <th className="text-left px-3 py-3 font-semibold whitespace-nowrap w-[5rem]">Amount</th>
+                  <th className="text-left px-3 py-3 font-semibold whitespace-nowrap w-[5.5rem]">Status</th>
+                  <th className="text-left px-3 py-3 font-semibold whitespace-nowrap w-[5.5rem]">Mails sent</th>
+                  <th className="text-left px-3 py-3 font-semibold whitespace-nowrap w-[4.5rem]">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {pagination.pageItems.map((r) => {
                   const canRemind = ["PENDING", "FAILED"].includes(String(r.payment_status || "").toUpperCase());
                   const sending = mailingId === r.registration_id;
+                  const mailCount = Number(r.reminder_email_count || 0);
+                  const durationLabel = durationWithDates(
+                    r.duration_months,
+                    datesFor(periods, r.duration_months, r).start,
+                    datesFor(periods, r.duration_months, r).end,
+                  );
                   return (
                   <tr key={r.registration_id} className="border-b border-slate-100 hover:bg-slate-50/60" data-testid={`row-${r.registration_id}`}>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3 whitespace-nowrap">
                       <input
                         type="checkbox"
                         checked={selection.isSelected(r.registration_id)}
@@ -224,20 +307,54 @@ export default function AdminRegistrations({
                         aria-label={`Select ${r.registration_id}`}
                       />
                     </td>
-                    <td className="px-4 py-3 font-mono-tabular text-xs font-semibold">{r.registration_id}</td>
-                    <td className="px-4 py-3">{r.full_name}</td>
-                    <td className="px-4 py-3 text-slate-600">{r.email}</td>
-                    <td className="px-4 py-3 text-slate-600">{r.internship_type}</td>
-                    <td className="px-4 py-3">{durationWithDates(r.duration_months, datesFor(periods, r.duration_months, r).start, datesFor(periods, r.duration_months, r).end)}</td>
-                    <td className="px-4 py-3 font-mono-tabular">{formatCurrency(r.amount)}</td>
-                    <td className="px-4 py-3"><StatusBadge s={r.payment_status} /></td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3 font-mono-tabular text-xs font-semibold">
+                      <TruncateText maxClass="max-w-full" className="font-semibold">{r.registration_id}</TruncateText>
+                    </td>
+                    <td className="px-3 py-3">
+                      <TruncateText maxClass="max-w-full">{r.full_name}</TruncateText>
+                    </td>
+                    <td className="px-3 py-3 text-slate-600">
+                      <TruncateText maxClass="max-w-full" className="text-slate-600">{r.email}</TruncateText>
+                    </td>
+                    <td className="px-3 py-3 text-slate-600">
+                      <TruncateText maxClass="max-w-full" className="text-slate-600">{r.internship_type}</TruncateText>
+                    </td>
+                    <td className="px-3 py-3">
+                      <TruncateText maxClass="max-w-full">{durationLabel}</TruncateText>
+                    </td>
+                    <td className="px-3 py-3 font-mono-tabular whitespace-nowrap">
+                      <TruncateText maxClass="max-w-full">{formatCurrency(r.amount)}</TruncateText>
+                    </td>
+                    <td className="px-3 py-3 whitespace-nowrap"><StatusBadge s={r.payment_status} /></td>
+                    <td className="px-3 py-3 whitespace-nowrap" data-testid={`reg-mail-count-${r.registration_id}`}>
+                      <span
+                        className={`inline-flex min-w-[1.5rem] items-center justify-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                          mailCount > 0
+                            ? "border border-blue-200 bg-blue-50 text-blue-700"
+                            : "border border-slate-200 bg-slate-50 text-slate-500"
+                        }`}
+                        title={
+                          mailCount > 0
+                            ? `Reminder email sent ${mailCount} time${mailCount === 1 ? "" : "s"}`
+                            : "No reminder email sent yet"
+                        }
+                      >
+                        {mailCount}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 whitespace-nowrap">
                       {canRemind ? (
                         <button
                           type="button"
                           onClick={() => sendReminder(r)}
                           disabled={Boolean(mailingId) || busy}
-                          title={sending ? "Sending…" : "Send email"}
+                          title={
+                            sending
+                              ? "Sending…"
+                              : mailCount > 0
+                                ? `Send again (already sent ${mailCount}×)`
+                                : "Send email"
+                          }
                           aria-label={sending ? "Sending reminder email" : "Send reminder email"}
                           className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
                           data-testid={`send-reminder-${r.registration_id}`}
@@ -252,7 +369,7 @@ export default function AdminRegistrations({
                   );
                 })}
                 {rows.length === 0 && (
-                  <tr><td colSpan={9} className="px-4 py-16 text-center text-sm text-slate-500">No registrations found</td></tr>
+                  <tr><td colSpan={10} className="px-4 py-16 text-center text-sm text-slate-500">No registrations found</td></tr>
                 )}
               </tbody>
             </table>
@@ -289,5 +406,6 @@ export default function AdminRegistrations({
         testId="registrations-clear-modal"
       />
     </div>
+    </TooltipProvider>
   );
 }

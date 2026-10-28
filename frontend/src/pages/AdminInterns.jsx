@@ -410,6 +410,7 @@ export default function AdminInterns() {
                     <th key={f.key} className="text-left px-2.5 py-2 font-semibold whitespace-nowrap">{f.label}</th>
                   ))}
                   <th className="text-left px-2.5 py-2 font-semibold">Imported</th>
+                  <th className="text-left px-2.5 py-2 font-semibold">Mails sent</th>
                   <th className="text-left px-2.5 py-2 font-semibold">Action</th>
                 </tr>
               </thead>
@@ -418,6 +419,7 @@ export default function AdminInterns() {
                   const sending = mailingId === r.intern_id;
                   const rowInvalid = r.is_valid === false;
                   const invalidFields = new Set(r.invalid_fields || []);
+                  const mailCount = Number(r.invite_email_count || 0);
                   return (
                     <tr
                       key={r.intern_id}
@@ -458,6 +460,22 @@ export default function AdminInterns() {
                       <td className="px-2.5 py-2 text-slate-500 text-[11px] whitespace-nowrap">
                         {(r.created_at || "").slice(0, 10) || "—"}
                       </td>
+                      <td className="px-2.5 py-2 whitespace-nowrap" data-testid={`intern-mail-count-${r.intern_id}`}>
+                        <span
+                          className={`inline-flex min-w-[1.5rem] items-center justify-center px-1.5 py-0.5 text-[11px] font-semibold ${
+                            mailCount > 0
+                              ? "border border-blue-200 bg-blue-50 text-blue-700"
+                              : "border border-slate-200 bg-slate-50 text-slate-500"
+                          }`}
+                          title={
+                            mailCount > 0
+                              ? `Invitation email sent ${mailCount} time${mailCount === 1 ? "" : "s"}`
+                              : "No invitation email sent yet"
+                          }
+                        >
+                          {mailCount}
+                        </span>
+                      </td>
                       <td className="px-2 py-1.5">
                         <button
                           type="button"
@@ -468,7 +486,9 @@ export default function AdminInterns() {
                               ? "Fix invalid fields first"
                               : sending
                                 ? "Sending…"
-                                : "Send certificate claim invitation"
+                                : mailCount > 0
+                                  ? `Send again (already sent ${mailCount}×)`
+                                  : "Send certificate claim invitation"
                           }
                           aria-label={sending ? "Sending invitation email" : "Send certificate claim invitation"}
                           className="inline-flex h-7 w-7 items-center justify-center rounded-none border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
@@ -482,7 +502,7 @@ export default function AdminInterns() {
                 })}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={12} className="px-4 py-12 text-center text-xs text-slate-500">
+                    <td colSpan={13} className="px-4 py-12 text-center text-xs text-slate-500">
                       {rows.length === 0
                         ? "No interns yet — download the sample CSV, then import your file"
                         : "No interns match your search"}
