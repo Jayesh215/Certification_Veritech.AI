@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Search, FileDown, Loader2, Mail } from "lucide-react";
@@ -34,42 +34,18 @@ const StatusBadge = ({ s }) => {
 
 function TruncateText({ children, className = "", maxClass = "max-w-[11rem]" }) {
   const text = children == null || children === "" ? "—" : String(children);
-  const textRef = useRef(null);
-  const [truncated, setTruncated] = useState(false);
-
-  useEffect(() => {
-    const el = textRef.current;
-    if (!el) {
-      setTruncated(false);
-      return undefined;
-    }
-    const measure = () => {
-      setTruncated(el.scrollWidth > el.clientWidth + 1);
-    };
-    measure();
-    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
-    ro?.observe(el);
-    window.addEventListener("resize", measure);
-    return () => {
-      ro?.disconnect();
-      window.removeEventListener("resize", measure);
-    };
-  }, [text, maxClass, className]);
-
   const content = (
-    <span ref={textRef} className={`block ${maxClass} truncate whitespace-nowrap ${className}`}>
+    <span className={`block ${maxClass} truncate whitespace-nowrap ${className}`}>
       {text}
     </span>
   );
-  if (text === "—" || !truncated) return content;
+  if (text === "—") return content;
   return (
-    <Tooltip delayDuration={200}>
+    <Tooltip delayDuration={150}>
       <TooltipTrigger asChild>
         <span className="block min-w-0 cursor-default">{content}</span>
       </TooltipTrigger>
-      <TooltipContent side="top" className="break-words">
-        {text}
-      </TooltipContent>
+      <TooltipContent side="top">{text}</TooltipContent>
     </Tooltip>
   );
 }
@@ -201,7 +177,7 @@ export default function AdminRegistrations({
   };
 
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delayDuration={150} skipDelayDuration={0}>
     <div>
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
