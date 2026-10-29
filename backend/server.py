@@ -1656,12 +1656,13 @@ async def _send_one_intern_claim_invite(intern: dict, admin_email: str) -> dict:
         raise HTTPException(400, "This intern has no email address")
 
     base = FRONTEND_URL.rstrip("/")
-    claim_url = f"{base}/register/{intern_id}"
-    status_url = f"{base}/status"
+    # Prefill intern id on register when available; otherwise fall back to /register
+    claim_url = f"{base}/register/{intern_id}" if intern_id else f"{base}/register"
     message_id = await send_intern_claim_invite_email(
         intern,
         claim_url=claim_url,
-        status_url=status_url,
+        site_url=base,
+        status_url=f"{base}/status",
     )
     if not message_id:
         raise HTTPException(502, "Could not send the invitation email. Check email settings and try again.")

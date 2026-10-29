@@ -303,49 +303,71 @@ async def send_pending_reminder_email(reg: dict, *, cta_url: str = "") -> Option
         return None
 
 
-def _intern_claim_invite_html(intern: dict, *, claim_url: str, status_url: str) -> str:
+def _intern_claim_invite_html(intern: dict, *, claim_url: str, site_url: str) -> str:
+    name = _esc(intern.get("full_name") or "Intern")
     claim = _esc(claim_url)
-    status = _esc(status_url)
+    site = _esc(site_url)
     return f"""
     <table width="100%" cellspacing="0" cellpadding="0" style="background:#F8FAFC;padding:32px 0;font-family:Arial,sans-serif;">
       <tr><td align="center">
         <table width="600" cellspacing="0" cellpadding="0" style="background:#fff;border-radius:16px;border:1px solid #E2E8F0;overflow:hidden;">
           <tr><td style="background:#0F172A;padding:24px;">
-            <div style="color:#fff;font-size:22px;font-weight:800;letter-spacing:-0.5px;">Veritech<span style="color:#3B82F6;">.AI</span></div>
-            <div style="color:#94A3B8;font-size:11px;font-weight:600;letter-spacing:2px;margin-top:6px;">CERTIFICATE CLAIM INVITE</div>
+            <div style="color:#fff;font-size:22px;font-weight:800;letter-spacing:-0.5px;">VeriTech<span style="color:#3B82F6;">.AI</span></div>
+            <div style="color:#94A3B8;font-size:11px;font-weight:600;letter-spacing:2px;margin-top:6px;">INTERNSHIP CERTIFICATE</div>
           </td></tr>
-          <tr><td style="padding:32px 24px;">
-            <h1 style="margin:0 0 8px;font-size:22px;color:#0F172A;">Claim your internship certificate</h1>
-            <p style="margin:0 0 16px;color:#475569;font-size:14px;line-height:1.6;">
-              Hello <strong>{_esc(intern.get('full_name'))}</strong>, congratulations on successfully completing your
-              Veritech.AI internship. You are invited to claim your official certificate now.
+          <tr><td style="padding:32px 24px;color:#475569;font-size:14px;line-height:1.7;">
+            <p style="margin:0 0 16px;color:#0F172A;">Dear <strong>{name}</strong>,</p>
+            <p style="margin:0 0 16px;">
+              As we approach the final stage of our internship journey, Team VeriTech.AI would like to express our sincere
+              gratitude for your hard work, dedication, and commitment. Your contributions and efforts throughout the
+              internship are truly appreciated.
             </p>
-            <table width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #E2E8F0;border-radius:12px;margin-bottom:20px;">
-              <tr><td style="padding:14px 18px;color:#64748B;font-size:13px;">Intern ID</td>
-                  <td style="padding:14px 18px;color:#0F172A;font-size:13px;font-weight:700;text-align:right;">{_esc(intern.get('intern_id'))}</td></tr>
-              <tr><td style="padding:14px 18px;color:#64748B;font-size:13px;border-top:1px solid #F1F5F9;">Internship</td>
-                  <td style="padding:14px 18px;color:#0F172A;font-size:13px;font-weight:700;text-align:right;border-top:1px solid #F1F5F9;">{_esc(intern.get('internship_type') or '')}</td></tr>
-              <tr><td style="padding:14px 18px;color:#64748B;font-size:13px;border-top:1px solid #F1F5F9;">College</td>
-                  <td style="padding:14px 18px;color:#0F172A;font-size:13px;font-weight:700;text-align:right;border-top:1px solid #F1F5F9;">{_esc(intern.get('college') or '')}</td></tr>
-            </table>
-            <h2 style="margin:0 0 10px;font-size:16px;color:#0F172A;">Why claim your certificate</h2>
-            <ul style="margin:0 0 22px;padding-left:18px;color:#475569;font-size:14px;line-height:1.7;">
-              <li>Official proof you completed a Veritech.AI internship.</li>
-              <li>Includes a QR code employers can scan to verify authenticity.</li>
-              <li>Ready to add to your resume, LinkedIn, and campus placements.</li>
-            </ul>
-            <div style="text-align:center;">
+            <p style="margin:0 0 16px;">
+              We are delighted to announce that all interns are eligible to receive their Internship Certificate!
+            </p>
+            <h2 style="margin:0 0 10px;font-size:18px;color:#0F172A;">Grab your internship certificate instantly!</h2>
+            <p style="margin:0 0 18px;">
+              Take the next step in your professional journey by registering for your official internship certificate.
+              The registration process is simple, and you can receive your certificate instantly upon successful registration.
+            </p>
+            <div style="text-align:center;margin:0 0 22px;">
               <a href="{claim}" style="display:inline-block;background:#2563EB;color:#fff;text-decoration:none;font-size:14px;font-weight:700;padding:13px 24px;border-radius:12px;">
-                Claim your certificate
+                Register for your internship certificate
               </a>
             </div>
-            <p style="margin:16px 0 0;color:#64748B;font-size:12px;line-height:1.6;text-align:center;">
-              Registration link: <a href="{claim}" style="color:#2563EB;">{claim}</a><br/>
-              Track status anytime: <a href="{status}" style="color:#2563EB;">{status}</a>
+            <p style="margin:0 0 18px;font-size:13px;">
+              Register here:<br/>
+              <a href="{claim}" style="color:#2563EB;word-break:break-all;">{claim}</a>
+            </p>
+            <h2 style="margin:0 0 10px;font-size:16px;color:#0F172A;">Why is your internship certificate important?</h2>
+            <ul style="margin:0 0 18px;padding-left:18px;">
+              <li style="margin-bottom:8px;"><strong>Showcase practical experience:</strong> Highlight your hands-on project experience to potential employers.</li>
+              <li style="margin-bottom:8px;"><strong>Strengthen your resume:</strong> Add value to your professional profile and job applications.</li>
+              <li style="margin-bottom:8px;"><strong>Validate your skills:</strong> Demonstrate your commitment to learning and professional development.</li>
+              <li style="margin-bottom:8px;"><strong>Boost your career opportunities:</strong> Support your journey toward future jobs, higher education, and new opportunities.</li>
+            </ul>
+            <p style="margin:0 0 16px;padding:12px 14px;background:#FEF3C7;border:1px solid #FCD34D;border-radius:10px;color:#92400E;">
+              <strong>Registration deadline: 31st October 2026</strong><br/>
+              Don't miss this opportunity! Complete your registration before the deadline and take pride in your internship achievements.
+            </p>
+            <p style="margin:0 0 16px;">
+              Learn more about the importance and benefits of your VeriTech.AI internship certificate:<br/>
+              <a href="{site}" style="color:#2563EB;">{site}</a>
+            </p>
+            <p style="margin:0 0 16px;">
+              Once again, thank you for being a part of the VeriTech.AI internship program. We wish you continued success
+              in your career and future endeavors!
+            </p>
+            <p style="margin:0;color:#0F172A;">
+              Best Regards,<br/>
+              <strong>HR Team</strong><br/>
+              Email: <a href="mailto:hr@veritech-ai.com" style="color:#2563EB;">hr@veritech-ai.com</a>
+              &nbsp;|&nbsp;
+              <a href="https://www.veritech-ai.com" style="color:#2563EB;">www.veritech-ai.com</a>
             </p>
           </td></tr>
           <tr><td style="background:#F8FAFC;padding:18px 24px;color:#94A3B8;font-size:11px;text-align:center;">
-            © 2026 Veritech.AI · AI • Software • Technology
+            © 2026 VeriTech.AI · AI • Software • Technology
           </td></tr>
         </table>
       </td></tr>
@@ -353,20 +375,31 @@ def _intern_claim_invite_html(intern: dict, *, claim_url: str, status_url: str) 
     """
 
 
-def _intern_claim_invite_text(intern: dict, *, claim_url: str, status_url: str) -> str:
+def _intern_claim_invite_text(intern: dict, *, claim_url: str, site_url: str) -> str:
+    name = intern.get("full_name") or "Intern"
     return (
-        f"Hello {intern.get('full_name') or ''},\n\n"
-        "Congratulations on successfully completing your Veritech.AI internship. "
-        "You are invited to claim your official certificate now.\n\n"
-        f"Intern ID: {intern.get('intern_id') or ''}\n"
-        f"Internship: {intern.get('internship_type') or ''}\n"
-        f"College: {intern.get('college') or ''}\n\n"
-        "Why claim your certificate:\n"
-        "- Official proof of your completed internship\n"
-        "- QR-verifiable by employers\n"
-        "- Ready for resume, LinkedIn, and campus placements\n\n"
-        f"Claim your certificate: {claim_url}\n"
-        f"Track status: {status_url}\n"
+        f"Dear {name},\n\n"
+        "As we approach the final stage of our internship journey, Team VeriTech.AI would like to express our sincere "
+        "gratitude for your hard work, dedication, and commitment. Your contributions and efforts throughout the "
+        "internship are truly appreciated.\n\n"
+        "We are delighted to announce that all interns are eligible to receive their Internship Certificate!\n\n"
+        "GRAB YOUR INTERNSHIP CERTIFICATE INSTANTLY!\n\n"
+        "Take the next step in your professional journey by registering for your official internship certificate. "
+        "The registration process is simple, and you can receive your certificate instantly upon successful registration.\n\n"
+        f"Register for Your Internship Certificate:\n{claim_url}\n\n"
+        "Why Is Your Internship Certificate Important?\n"
+        "- Showcase Practical Experience: Highlight your hands-on project experience to potential employers.\n"
+        "- Strengthen Your Resume: Add value to your professional profile and job applications.\n"
+        "- Validate Your Skills: Demonstrate your commitment to learning and professional development.\n"
+        "- Boost Your Career Opportunities: Support your journey toward future jobs, higher education, and new opportunities.\n\n"
+        "Registration Deadline: 31st October 2026\n\n"
+        "Don't miss this opportunity! Complete your registration before the deadline and take pride in your internship achievements.\n\n"
+        f"Learn more about the importance and benefits of your VeriTech.AI internship certificate:\n{site_url}\n\n"
+        "Once again, thank you for being a part of the VeriTech.AI internship program. We wish you continued success "
+        "in your career and future endeavors!\n\n"
+        "Best Regards,\n"
+        "HR Team\n"
+        "Email: hr@veritech-ai.com | www.veritech-ai.com\n"
     )
 
 
@@ -375,26 +408,30 @@ async def send_intern_claim_invite_email(
     *,
     claim_url: str = "",
     status_url: str = "",
+    site_url: str = "",
 ) -> Optional[str]:
     if not _configure_resend():
         logger.info("Resend disabled — skipping claim invite for %s", intern.get("intern_id"))
         return None
-    if not intern.get("email"):
+    to_email = (intern.get("email") or "").strip()
+    if not to_email:
         return None
 
-    intern_id = intern.get("intern_id") or "intern"
+    site = (site_url or status_url or "").rstrip("/") or "https://certificate.veritech-ai.com"
+    register_url = claim_url or f"{site}/register"
+    name = (intern.get("full_name") or "Intern").strip()
     params = {
         "from": SENDER_EMAIL,
-        "to": [intern["email"]],
-        "subject": f"Claim your Veritech.AI internship certificate — {intern_id}",
-        "html": _intern_claim_invite_html(intern, claim_url=claim_url, status_url=status_url),
-        "text": _intern_claim_invite_text(intern, claim_url=claim_url, status_url=status_url),
+        "to": [to_email],
+        "subject": f"Grab your VeriTech.AI internship certificate instantly — {name}",
+        "html": _intern_claim_invite_html(intern, claim_url=register_url, site_url=site),
+        "text": _intern_claim_invite_text(intern, claim_url=register_url, site_url=site),
     }
     try:
         result = await asyncio.to_thread(resend.Emails.send, params)
         eid = result.get("id") if isinstance(result, dict) else getattr(result, "id", None)
-        logger.info("Claim invite sent to %s (id=%s)", intern["email"], eid)
+        logger.info("Claim invite sent to %s for %s (id=%s)", to_email, intern.get("intern_id"), eid)
         return eid
     except Exception as e:
-        logger.error("Resend claim invite failed: %s", e)
+        logger.error("Resend claim invite failed for %s: %s", to_email, e)
         return None
