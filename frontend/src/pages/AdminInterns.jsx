@@ -16,10 +16,6 @@ const EDITABLE_FIELDS = [
   { key: "full_name", label: "Name" },
   { key: "email", label: "Email" },
   { key: "mobile", label: "Mobile" },
-  { key: "college", label: "College" },
-  { key: "course", label: "Course" },
-  { key: "branch", label: "Branch" },
-  { key: "graduation_year", label: "Grad. Year" },
   { key: "internship_type", label: "Internship" },
 ];
 
@@ -37,6 +33,64 @@ async function downloadAuthenticated(path, filename) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+async function streamBulkSendInvite(internIds, onProgress) {
+  const token = localStorage.getItem("veritech_admin_token");
+  const res = await fetch(`${API_BASE}/admin/interns/bulk-send-invite?stream=1`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      Accept: "application/x-ndjson",
+    },
+    body: JSON.stringify({ intern_ids: internIds }),
+  });
+  if (!res.ok) {
+    let detail = "Bulk email failed";
+    try {
+      const err = await res.json();
+      detail = err?.detail || detail;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(typeof detail === "string" ? detail : "Bulk email failed");
+  }
+  if (!res.body) {
+    throw new Error("Bulk email stream unavailable");
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finalEvent = null;
+
+  const handleLine = (line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    const event = JSON.parse(trimmed);
+    onProgress?.(event);
+    if (event.event === "done") finalEvent = event;
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+    lines.forEach(handleLine);
+  }
+  if (buffer.trim()) handleLine(buffer);
+
+  return (
+    finalEvent || {
+      ok: true,
+      sent: 0,
+      skipped: 0,
+      failed: 0,
+    }
+  );
 }
 
 function EditableCell({
@@ -120,6 +174,7 @@ export default function AdminInterns() {
   const [clearOpen, setClearOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [mailingId, setMailingId] = useState("");
+  const [mailProgress, setMailProgress] = useState(null);
 
   const load = async (term = search) => {
     setLoading(true);
@@ -252,10 +307,26 @@ export default function AdminInterns() {
       toast.error("Selected rows need fixes before email can be sent");
       return;
     }
+    const total = selection.selectedIds.length;
     setBusy(true);
+    setMailProgress({ done: 0, total, sent: 0, skipped: 0, failed: 0 });
     try {
-      const { data } = await api.post("/admin/interns/bulk-send-invite", {
-        intern_ids: selection.selectedIds,
+      const data = await streamBulkSendInvite(selection.selectedIds, (event) => {
+        if (!event || event.event === "done") return;
+        setMailProgress({
+          done: event.done ?? 0,
+          total: event.total ?? total,
+          sent: event.sent ?? 0,
+          skipped: event.skipped ?? 0,
+          failed: event.failed ?? 0,
+        });
+      });
+      setMailProgress({
+        done: data.total ?? total,
+        total: data.total ?? total,
+        sent: data.sent ?? 0,
+        skipped: data.skipped ?? 0,
+        failed: data.failed ?? 0,
       });
       const parts = [
         `${data.sent || 0} sent`,
@@ -269,9 +340,10 @@ export default function AdminInterns() {
       }
       await load(search);
     } catch (e) {
-      toast.error(e?.response?.data?.detail || "Bulk email failed");
+      toast.error(e?.message || e?.response?.data?.detail || "Bulk email failed");
     } finally {
       setBusy(false);
+      window.setTimeout(() => setMailProgress(null), 900);
     }
   };
 
@@ -311,8 +383,41 @@ export default function AdminInterns() {
     }
   };
 
+  const mailPct =
+    mailProgress && mailProgress.total > 0
+      ? Math.min(100, Math.round((mailProgress.done / mailProgress.total) * 100))
+      : 0;
+
   return (
     <div>
+      {mailProgress && (
+        <div
+          className="sticky top-0 z-30 -mx-1 mb-4 rounded-2xl border border-blue-200 bg-blue-50/95 px-4 py-3 shadow-sm backdrop-blur sm:mx-0"
+          data-testid="interns-mail-progress"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold text-blue-900">
+            <span className="inline-flex items-center gap-1.5">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Sending invitation emails…
+            </span>
+            <span className="tabular-nums">
+              {mailPct}% · {mailProgress.done}/{mailProgress.total}
+              <span className="ml-2 font-medium text-blue-700/80">
+                ({mailProgress.sent} sent · {mailProgress.skipped} skipped · {mailProgress.failed} failed)
+              </span>
+            </span>
+          </div>
+          <div className="h-2.5 overflow-hidden rounded-full bg-blue-100">
+            <div
+              className="h-full rounded-full bg-blue-600 transition-[width] duration-300 ease-out"
+              style={{ width: `${mailPct}%` }}
+            />
+          </div>
+        </div>
+      )}
+
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">Interns</h1>
@@ -368,7 +473,7 @@ export default function AdminInterns() {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search name, email, mobile, college…"
+            placeholder="Search name, email, mobile, internship…"
             className="flex-1 bg-transparent text-sm outline-none"
             data-testid="interns-search-input"
           />
@@ -502,7 +607,7 @@ export default function AdminInterns() {
                 })}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={13} className="px-4 py-12 text-center text-xs text-slate-500">
+                    <td colSpan={9} className="px-4 py-12 text-center text-xs text-slate-500">
                       {rows.length === 0
                         ? "No interns yet — download the sample CSV, then import your file"
                         : "No interns match your search"}

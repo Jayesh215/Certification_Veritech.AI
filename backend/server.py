@@ -3,6 +3,7 @@ import asyncio
 import hashlib
 import hmac
 import io
+import json
 import logging
 import os
 import re
@@ -1716,71 +1717,112 @@ async def admin_send_intern_claim_invite(
 async def admin_bulk_send_intern_claim_invite(
     body: InternBulkDeleteRequest,
     email: str = Depends(require_admin),
+    stream: bool = Query(False),
 ):
     ids = [str(i).strip() for i in body.intern_ids if str(i).strip()]
     if not ids:
         raise HTTPException(400, "No intern IDs provided")
 
-    sent = 0
-    skipped = 0
-    failed = 0
-    details: list[dict] = []
+    async def _process():
+        sent = 0
+        skipped = 0
+        failed = 0
+        details: list[dict] = []
+        total = len(ids)
+        yield {
+            "event": "start",
+            "total": total,
+            "done": 0,
+            "sent": 0,
+            "skipped": 0,
+            "failed": 0,
+        }
 
-    for intern_id in ids:
-        intern = await db.interns.find_one({"intern_id": intern_id})
-        if not intern:
-            failed += 1
-            details.append({"intern_id": intern_id, "status": "failed", "message": "Intern not found"})
-            continue
-        if intern.get("is_valid") is False:
-            skipped += 1
-            details.append({
-                "intern_id": intern_id,
-                "status": "skipped",
-                "message": "Invalid fields — fix before sending",
-            })
-            continue
-        if not intern.get("email"):
-            skipped += 1
-            details.append({
-                "intern_id": intern_id,
-                "status": "skipped",
-                "message": "Missing email",
-            })
-            continue
-        try:
-            result = await _send_one_intern_claim_invite(intern, email)
-            sent += 1
-            details.append({
-                "intern_id": intern_id,
-                "status": "sent",
-                "to": result.get("to"),
-            })
-        except HTTPException as exc:
-            failed += 1
-            details.append({
-                "intern_id": intern_id,
-                "status": "failed",
-                "message": str(exc.detail),
-            })
-        except Exception as exc:
-            failed += 1
-            details.append({
-                "intern_id": intern_id,
-                "status": "failed",
-                "message": str(exc),
-            })
+        for idx, intern_id in enumerate(ids, start=1):
+            intern = await db.interns.find_one({"intern_id": intern_id})
+            if not intern:
+                failed += 1
+                details.append({"intern_id": intern_id, "status": "failed", "message": "Intern not found"})
+            elif intern.get("is_valid") is False:
+                skipped += 1
+                details.append({
+                    "intern_id": intern_id,
+                    "status": "skipped",
+                    "message": "Invalid fields — fix before sending",
+                })
+            elif not intern.get("email"):
+                skipped += 1
+                details.append({
+                    "intern_id": intern_id,
+                    "status": "skipped",
+                    "message": "Missing email",
+                })
+            else:
+                try:
+                    result = await _send_one_intern_claim_invite(intern, email)
+                    sent += 1
+                    details.append({
+                        "intern_id": intern_id,
+                        "status": "sent",
+                        "to": result.get("to"),
+                    })
+                except HTTPException as exc:
+                    failed += 1
+                    details.append({
+                        "intern_id": intern_id,
+                        "status": "failed",
+                        "message": str(exc.detail),
+                    })
+                except Exception as exc:
+                    failed += 1
+                    details.append({
+                        "intern_id": intern_id,
+                        "status": "failed",
+                        "message": str(exc),
+                    })
 
-    logger.info(
-        "Admin %s bulk claim invites: sent=%s skipped=%s failed=%s",
-        email, sent, skipped, failed,
-    )
+            yield {
+                "event": "progress",
+                "total": total,
+                "done": idx,
+                "sent": sent,
+                "skipped": skipped,
+                "failed": failed,
+                "current_id": intern_id,
+            }
+
+        logger.info(
+            "Admin %s bulk claim invites: sent=%s skipped=%s failed=%s",
+            email, sent, skipped, failed,
+        )
+        yield {
+            "event": "done",
+            "ok": True,
+            "total": total,
+            "done": total,
+            "sent": sent,
+            "skipped": skipped,
+            "failed": failed,
+            "details": details[:200],
+        }
+
+    if stream:
+        async def ndjson():
+            async for payload in _process():
+                yield json.dumps(payload) + "\n"
+
+        return StreamingResponse(ndjson(), media_type="application/x-ndjson")
+
+    final = None
+    async for payload in _process():
+        if payload.get("event") == "done":
+            final = payload
     return {
         "ok": True,
-        "sent": sent,
-        "skipped": skipped,
-        "failed": failed,
-        "details": details[:200],
+        "sent": final.get("sent", 0) if final else 0,
+        "skipped": final.get("skipped", 0) if final else 0,
+        "failed": final.get("failed", 0) if final else 0,
+        "details": (final or {}).get("details", []),
     }
 
 
